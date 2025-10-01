@@ -1,3 +1,12 @@
 <resources>
     <string name="app_name">LLM Batch</string>
+    <string name="select_prompts">Select prompts list</string>
+    <string name="run_batch">Run LLM batch</string>
+    <string name="model_prompt">Select a model</string>
+    <string name="results_file_ready">Results file ready. Tap to open.</string>
+    <string name="gemini_api_key_title">Enter Gemini API Key</string>
+    <string name="api_key">API Key</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="no_file_selected">Please select a prompts file first.</string>
 </resources>
