@@ -196,7 +196,11 @@ class MainActivity : AppCompatActivity() {
                         // Placeholder for remote call logic if it were real
                         "Gemini (key: ${apiKey?.take(4)}...) response for '$prompt'"
                     }
-                    val formattedResult = "Prompt: $prompt -> Result: $result\n"
+                    val formattedResult = if (result.startsWith("Error:")) {
+                        "Prompt: $prompt -> $result\n"
+                    } else {
+                        "Prompt: $prompt -> Result: $result\n"
+                    }
                     fileOutputStream.write(formattedResult.toByteArray())
                 }
                 fileOutputStream.close()
