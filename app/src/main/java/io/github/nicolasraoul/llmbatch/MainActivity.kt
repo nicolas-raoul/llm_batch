@@ -4,20 +4,27 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.text.Html
+import android.text.method.LinkMovementMethod
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.ai.edge.aicore.GenerativeAIException
+import com.google.ai.edge.aicore.GenerativeModel
+import com.google.ai.edge.aicore.generationConfig
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.nicolasraoul.llmbatch.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -30,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var promptsFileUri: Uri? = null
     private var resultFile: File? = null
+    private var model: GenerativeModel? = null
 
     // Activity result launcher for the file picker
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -42,6 +50,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -53,6 +62,29 @@ class MainActivity : AppCompatActivity() {
 
         setupSpinner()
         setupClickListeners()
+        initGenerativeModel()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        model?.close()
+    }
+
+    private fun initGenerativeModel() {
+        try {
+            model = GenerativeModel(
+                generationConfig {
+                    context = applicationContext
+                    temperature = 0.2f
+                    topK = 16
+                    maxOutputTokens = 10000
+                }
+            )
+        } catch (e: Exception) {
+            // Model initialization can fail if AI Core is not available.
+            // We'll handle this check before trying to use the model.
+            e.printStackTrace()
+        }
     }
 
     private fun setupSpinner() {
@@ -84,10 +116,19 @@ class MainActivity : AppCompatActivity() {
 
         val selectedModel = binding.modelSpinner.selectedItem.toString()
 
-        if (selectedModel == "Remote Gemini API") {
-            showApiKeyDialog()
-        } else {
-            processPrompts(selectedModel)
+        lifecycleScope.launch {
+            setUiState(isLoading = true)
+            if (selectedModel == "Remote Gemini API") {
+                setUiState(isLoading = false) // Hide progress bar while dialog is shown
+                showApiKeyDialog()
+            } else {
+                if (isAICoreUsable()) {
+                    processPrompts(selectedModel)
+                } else {
+                    setUiState(isLoading = false)
+                    showAiCoreSetupDialog()
+                }
+            }
         }
     }
 
@@ -109,24 +150,54 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun processPrompts(model: String, apiKey: String? = null) {
+    private suspend fun isAICoreUsable(): Boolean = withContext(Dispatchers.IO) {
+        if (model == null) initGenerativeModel()
+        return@withContext try {
+            // A short, simple prompt to check if the model is responsive.
+            val response = model?.generateContentStream("test")?.first()?.text
+            response != null
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private fun showAiCoreSetupDialog() {
+        val messageView = TextView(this).apply {
+            text = Html.fromHtml(getString(R.string.aicore_setup_instructions), Html.FROM_HTML_MODE_LEGACY)
+            movementMethod = LinkMovementMethod.getInstance()
+            setPadding(48, 16, 48, 16)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.aicore_setup_title))
+            .setView(messageView)
+            .setPositiveButton(getString(R.string.retry)) { _, _ ->
+                handleRunBatch() // Retry the whole process
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun processPrompts(modelName: String, apiKey: String? = null) {
         lifecycleScope.launch {
             setUiState(isLoading = true)
 
             try {
                 val prompts = readPromptsFromFile(promptsFileUri!!)
-                val results = mutableListOf<String>()
                 val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
                 resultFile = File(getExternalFilesDir(null), outputFileName)
                 val fileOutputStream = FileOutputStream(resultFile)
 
                 prompts.forEach { prompt ->
-                    // Simulate API call
-                    val result = simulateLlmCall(prompt, model, apiKey)
-                    results.add(result)
-                    fileOutputStream.write((result + "\n").toByteArray())
-                    // Simulate delay
-                    delay(500)
+                    val result = if (modelName == "Local Edge AI SDK") {
+                        realLlmCall(prompt)
+                    } else {
+                        // Placeholder for remote call logic if it were real
+                        "Gemini (key: ${apiKey?.take(4)}...) response for '$prompt'"
+                    }
+                    val formattedResult = "Prompt: $prompt -> Result: $result\n"
+                    fileOutputStream.write(formattedResult.toByteArray())
                 }
                 fileOutputStream.close()
                 setUiState(isLoading = false, resultsReady = true)
@@ -151,15 +222,13 @@ class MainActivity : AppCompatActivity() {
         prompts
     }
 
-    private suspend fun simulateLlmCall(prompt: String, model: String, apiKey: String?): String = withContext(Dispatchers.Default) {
-        // This is a placeholder for the actual LLM call.
-        delay(1000) // Simulate network/processing delay
-        val response = when (model) {
-            "Local Edge AI SDK" -> "Local response for '$prompt'"
-            "Remote Gemini API" -> "Gemini (key: ${apiKey?.take(4)}...) response for '$prompt'"
-            else -> "Unknown model response for '$prompt'"
+    private suspend fun realLlmCall(prompt: String): String = withContext(Dispatchers.Default) {
+        return@withContext try {
+            model?.generateContentStream(prompt)?.first()?.text ?: "Error: Empty response from model."
+        } catch (e: GenerativeAIException) {
+            e.printStackTrace()
+            "Error: ${e.message}"
         }
-        "Prompt: $prompt -> Result: $response"
     }
 
     private fun setUiState(isLoading: Boolean, resultsReady: Boolean = false) {

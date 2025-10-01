@@ -9,4 +9,19 @@
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
     <string name="no_file_selected">Please select a prompts file first.</string>
+    <string name="aicore_setup_title">AICore setup required</string>
+    <string name="checking_aicore">Checking AICore Beta...</string>
+    <string name="aicore_setup_instructions">This application relies on AICore Beta, so let\'s install it first:\n
+\n
+1. Join the &lt;a href="https://groups.google.com/g/aicore-experimental"&gt;aicore-experimental Google group&lt;/a&gt;\n
+\n
+2. Opt in to the &lt;a href="https://play.google.com/apps/testing/com.google.android.aicore"&gt;Android AICore testing program&lt;/a&gt;\n
+\n
+3. Go for a walk. An hour later, in the Google Play store app, make sure you have \"Android AICore (Beta)\" installed. If the \"(Beta)\" suffix is not present, update your apps, reboot, and wait it a bit more.\n
+\n
+If you still get this screen, please file an issue on the project\'s GitHub issue tracker, ideally with an ADB logcat dump.\n
+\n
+Thank you for your patience!
+</string>
+    <string name="retry">Retry</string>
 </resources>
