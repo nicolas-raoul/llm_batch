@@ -213,8 +213,8 @@ class MainActivity : AppCompatActivity() {
         prompts
     }
 
-    private suspend fun realLlmCall(prompt: String): String = withContext(Dispatchers.Default) {
-        return@withContext try {
+    private suspend fun realLlmCall(prompt: String): String {
+        return try {
             val response = model?.generateContent(prompt)
             response?.text ?: "Error: Empty response from model."
         } catch (e: GenerativeAIException) {
