@@ -82,7 +82,7 @@ class MainActivity : AppCompatActivity() {
             )
         } catch (e: Exception) {
             // Model initialization can fail if AI Core is not available.
-            // We'll handle this check before trying to use the model.
+            model = null
             e.printStackTrace()
         }
     }
@@ -122,7 +122,7 @@ class MainActivity : AppCompatActivity() {
                 setUiState(isLoading = false) // Hide progress bar while dialog is shown
                 showApiKeyDialog()
             } else {
-                if (isAICoreUsable()) {
+                if (model != null) {
                     processPrompts(selectedModel)
                 } else {
                     setUiState(isLoading = false)
@@ -143,23 +143,13 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton(getString(R.string.ok)) { _, _ ->
                 val apiKey = input.text.toString()
                 if (apiKey.isNotBlank()) {
-                    processPrompts("Remote Gemini API", apiKey)
+                    lifecycleScope.launch {
+                        processPrompts("Remote Gemini API", apiKey)
+                    }
                 }
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
-    }
-
-    private suspend fun isAICoreUsable(): Boolean = withContext(Dispatchers.IO) {
-        if (model == null) initGenerativeModel()
-        return@withContext try {
-            // A short, simple prompt to check if the model is responsive.
-            val response = model?.generateContentStream("test")?.first()?.text
-            response != null
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
     }
 
     private fun showAiCoreSetupDialog() {
@@ -179,37 +169,35 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun processPrompts(modelName: String, apiKey: String? = null) {
-        lifecycleScope.launch {
-            setUiState(isLoading = true)
+    private suspend fun processPrompts(modelName: String, apiKey: String? = null) {
+        setUiState(isLoading = true)
 
-            try {
-                val prompts = readPromptsFromFile(promptsFileUri!!)
-                val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
-                resultFile = File(getExternalFilesDir(null), outputFileName)
-                val fileOutputStream = FileOutputStream(resultFile)
+        try {
+            val prompts = readPromptsFromFile(promptsFileUri!!)
+            val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
+            resultFile = File(getExternalFilesDir(null), outputFileName)
+            val fileOutputStream = FileOutputStream(resultFile)
 
-                prompts.forEach { prompt ->
-                    val result = if (modelName == "Local Edge AI SDK") {
-                        realLlmCall(prompt)
-                    } else {
-                        // Placeholder for remote call logic if it were real
-                        "Gemini (key: ${apiKey?.take(4)}...) response for '$prompt'"
-                    }
-                    val formattedResult = if (result.startsWith("Error:")) {
-                        "Prompt: $prompt -> $result\n"
-                    } else {
-                        "Prompt: $prompt -> Result: $result\n"
-                    }
-                    fileOutputStream.write(formattedResult.toByteArray())
+            prompts.forEach { prompt ->
+                val result = if (modelName == "Local Edge AI SDK") {
+                    realLlmCall(prompt)
+                } else {
+                    // Placeholder for remote call logic if it were real
+                    "Gemini (key: ${apiKey?.take(4)}...) response for '$prompt'"
                 }
-                fileOutputStream.close()
-                setUiState(isLoading = false, resultsReady = true)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                setUiState(isLoading = false)
-                Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                val formattedResult = if (result.startsWith("Error:")) {
+                    "Prompt: $prompt -> $result\n"
+                } else {
+                    "Prompt: $prompt -> Result: $result\n"
+                }
+                fileOutputStream.write(formattedResult.toByteArray())
             }
+            fileOutputStream.close()
+            setUiState(isLoading = false, resultsReady = true)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            setUiState(isLoading = false)
+            Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -228,7 +216,11 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun realLlmCall(prompt: String): String = withContext(Dispatchers.Default) {
         return@withContext try {
-            model?.generateContentStream(prompt)?.first()?.text ?: "Error: Empty response from model."
+            val response = StringBuilder()
+            model?.generateContentStream(prompt)?.collect {
+                response.append(it.text)
+            }
+            if (response.isNotEmpty()) response.toString() else "Error: Empty response from model."
         } catch (e: GenerativeAIException) {
             e.printStackTrace()
             "Error: ${e.message}"
