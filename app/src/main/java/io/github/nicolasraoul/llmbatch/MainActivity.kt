@@ -173,11 +173,13 @@ class MainActivity : AppCompatActivity() {
 
         try {
             val prompts = readPromptsFromFile(promptsFileUri!!)
+            val totalPrompts = prompts.size
             val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
             resultFile = File(getExternalFilesDir(null), outputFileName)
             val fileOutputStream = FileOutputStream(resultFile)
 
-            prompts.forEach { prompt ->
+            prompts.forEachIndexed { index, prompt ->
+                binding.progressText.text = getString(R.string.processing_progress, index + 1, totalPrompts)
                 val result = if (modelName == "Local Edge AI SDK") {
                     realLlmCall(prompt)
                 } else {
@@ -225,9 +227,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun setUiState(isLoading: Boolean, resultsReady: Boolean = false) {
         binding.progressBar.visibility = if (isLoading) View.VISIBLE else View.GONE
+        binding.progressText.visibility = if (isLoading) View.VISIBLE else View.GONE
         binding.runBatchButton.isEnabled = !isLoading
         binding.selectFileButton.isEnabled = !isLoading
         binding.resultsLink.visibility = if (resultsReady) View.VISIBLE else View.GONE
+        if (resultsReady) {
+            binding.progressText.visibility = View.GONE
+        }
     }
 
     private fun openResultsFile() {

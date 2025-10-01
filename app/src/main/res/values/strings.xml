@@ -24,4 +24,5 @@ If you still get this screen, please file an issue on the project\'s GitHub issu
 Thank you for your patience!
 </string>
     <string name="retry">Retry</string>
+    <string name="processing_progress">Processing: %1$d/%2$d</string>
 </resources>
