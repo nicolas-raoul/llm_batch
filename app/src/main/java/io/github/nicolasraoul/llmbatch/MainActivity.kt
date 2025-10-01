@@ -24,7 +24,6 @@ import com.google.ai.edge.aicore.generationConfig
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.nicolasraoul.llmbatch.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -216,11 +215,8 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun realLlmCall(prompt: String): String = withContext(Dispatchers.Default) {
         return@withContext try {
-            val response = StringBuilder()
-            model?.generateContentStream(prompt)?.collect {
-                response.append(it.text)
-            }
-            if (response.isNotEmpty()) response.toString() else "Error: Empty response from model."
+            val response = model?.generateContent(prompt)
+            response?.text ?: "Error: Empty response from model."
         } catch (e: GenerativeAIException) {
             e.printStackTrace()
             "Error: ${e.message}"
