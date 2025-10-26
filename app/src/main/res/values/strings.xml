@@ -25,5 +25,4 @@ Thank you for your patience!
 </string>
     <string name="retry">Retry</string>
     <string name="processing_progress">Processing: %1$d/%2$d</string>
-    <string name="pause_duration">Pause: %1$d ms</string>
 </resources>

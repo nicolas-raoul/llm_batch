@@ -1,9 +1,7 @@
 package io.github.nicolasraoul.llmbatch
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.BatteryManager
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.text.Html
@@ -11,7 +9,6 @@ import android.text.method.LinkMovementMethod
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
-import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
@@ -21,34 +18,27 @@ import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
-import com.google.ai.client.generativeai.type.GenerateContentResponse
 import com.google.ai.edge.aicore.GenerativeAIException
-import com.google.ai.edge.aicore.GenerativeModel as EdgeGenerativeModel
+import com.google.ai.edge.aicore.GenerativeModel
 import com.google.ai.edge.aicore.generationConfig
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.firebase.Firebase
-import com.google.firebase.ai.genai.GenerativeModel as FirebaseGenerativeModel
-import com.google.firebase.ai.genai.genai
 import io.github.nicolasraoul.llmbatch.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStreamReader
-import kotlin.system.measureTimeMillis
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var promptsFileUri: Uri? = null
     private var resultFile: File? = null
-    private var edgeModel: EdgeGenerativeModel? = null
+    private var model: GenerativeModel? = null
 
+    // Activity result launcher for the file picker
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             promptsFileUri = it
@@ -70,19 +60,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupSpinner()
-        setupPauseSeekBar()
         setupClickListeners()
         initGenerativeModel()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        edgeModel?.close()
+        model?.close()
     }
 
     private fun initGenerativeModel() {
         try {
-            edgeModel = EdgeGenerativeModel(
+            model = GenerativeModel(
                 generationConfig {
                     context = applicationContext
                     temperature = 0.2f
@@ -91,7 +80,8 @@ class MainActivity : AppCompatActivity() {
                 }
             )
         } catch (e: Exception) {
-            edgeModel = null
+            // Model initialization can fail if AI Core is not available.
+            model = null
             e.printStackTrace()
         }
     }
@@ -103,21 +93,18 @@ class MainActivity : AppCompatActivity() {
         binding.modelSpinner.adapter = adapter
     }
 
-    private fun setupPauseSeekBar() {
-        binding.pauseLabel.text = getString(R.string.pause_duration, binding.pauseSeekBar.progress)
-        binding.pauseSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                binding.pauseLabel.text = getString(R.string.pause_duration, progress)
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-    }
-
     private fun setupClickListeners() {
-        binding.selectFileButton.setOnClickListener { filePickerLauncher.launch("text/plain") }
-        binding.runBatchButton.setOnClickListener { handleRunBatch() }
-        binding.resultsLink.setOnClickListener { openResultsFile() }
+        binding.selectFileButton.setOnClickListener {
+            filePickerLauncher.launch("text/plain")
+        }
+
+        binding.runBatchButton.setOnClickListener {
+            handleRunBatch()
+        }
+
+        binding.resultsLink.setOnClickListener {
+            openResultsFile()
+        }
     }
 
     private fun handleRunBatch() {
@@ -125,13 +112,16 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, getString(R.string.no_file_selected), Toast.LENGTH_SHORT).show()
             return
         }
+
         val selectedModel = binding.modelSpinner.selectedItem.toString()
+
         lifecycleScope.launch {
             setUiState(isLoading = true)
             if (selectedModel == "Remote Gemini API") {
+                setUiState(isLoading = false) // Hide progress bar while dialog is shown
                 showApiKeyDialog()
             } else {
-                if (edgeModel != null) {
+                if (model != null) {
                     processPrompts(selectedModel)
                 } else {
                     setUiState(isLoading = false)
@@ -142,20 +132,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showApiKeyDialog() {
-        val input = EditText(this).apply { hint = getString(R.string.api_key) }
+        val input = EditText(this).apply {
+            hint = getString(R.string.api_key)
+        }
+
         MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.gemini_api_key_title))
             .setView(input)
             .setPositiveButton(getString(R.string.ok)) { _, _ ->
                 val apiKey = input.text.toString()
                 if (apiKey.isNotBlank()) {
-                    lifecycleScope.launch { processPrompts("Remote Gemini API", apiKey) }
-                } else {
-                    setUiState(isLoading = false)
+                    lifecycleScope.launch {
+                        processPrompts("Remote Gemini API", apiKey)
+                    }
                 }
             }
-            .setNegativeButton(getString(R.string.cancel)) { _, _ -> setUiState(isLoading = false) }
-            .setOnCancelListener { setUiState(isLoading = false) }
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -165,60 +157,49 @@ class MainActivity : AppCompatActivity() {
             movementMethod = LinkMovementMethod.getInstance()
             setPadding(48, 16, 48, 16)
         }
+
         MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.aicore_setup_title))
             .setView(messageView)
-            .setPositiveButton(getString(R.string.retry)) { _, _ -> handleRunBatch() }
+            .setPositiveButton(getString(R.string.retry)) { _, _ ->
+                handleRunBatch() // Retry the whole process
+            }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private suspend fun processPrompts(modelName: String, apiKey: String? = null) {
         setUiState(isLoading = true)
+
         try {
             val prompts = readPromptsFromFile(promptsFileUri!!)
             val totalPrompts = prompts.size
-            val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.json"
+            val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
             resultFile = File(getExternalFilesDir(null), outputFileName)
-            val jsonArray = JSONArray()
+            val fileOutputStream = FileOutputStream(resultFile)
 
             prompts.forEachIndexed { index, prompt ->
                 binding.progressText.text = getString(R.string.processing_progress, index + 1, totalPrompts)
-
-                val batteryLevel = getBatteryLevel()
-                var result: String
-                val duration = measureTimeMillis {
-                    result = if (modelName == "Local Edge AI SDK") {
-                        edgeLlmCall(prompt)
-                    } else {
-                        geminiLlmCall(prompt, apiKey!!)
-                    }
+                val result = if (modelName == "Local Edge AI SDK") {
+                    realLlmCall(prompt)
+                } else {
+                    // Placeholder for remote call logic if it were real
+                    "Gemini (key: ${apiKey?.take(4)}...) response for '$prompt'"
                 }
-
-                val jsonObject = JSONObject().apply {
-                    put("prompt", prompt)
-                    put("response", result)
-                    put("duration_ms", duration)
-                    put("battery_level", batteryLevel)
+                val formattedResult = if (result.startsWith("Error:")) {
+                    "Prompt: $prompt -> $result\n"
+                } else {
+                    "Prompt: $prompt -> Result: $result\n"
                 }
-                jsonArray.put(jsonObject)
-
-                delay(binding.pauseSeekBar.progress.toLong())
+                fileOutputStream.write(formattedResult.toByteArray())
             }
-
-            FileOutputStream(resultFile).use { it.write(jsonArray.toString(2).toByteArray()) }
+            fileOutputStream.close()
             setUiState(isLoading = false, resultsReady = true)
         } catch (e: Exception) {
             e.printStackTrace()
             setUiState(isLoading = false)
             Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
-    }
-
-    private fun getBatteryLevel(): Float {
-        val batteryManager = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        val batteryLevel = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        return batteryLevel.toFloat() / 100f
     }
 
     private suspend fun readPromptsFromFile(uri: Uri): List<String> = withContext(Dispatchers.IO) {
@@ -234,25 +215,11 @@ class MainActivity : AppCompatActivity() {
         prompts
     }
 
-    private suspend fun edgeLlmCall(prompt: String): String {
+    private suspend fun realLlmCall(prompt: String): String {
         return try {
-            val response: GenerateContentResponse? = edgeModel?.generateContent(prompt)
+            val response = model?.generateContent(prompt)
             response?.text ?: "Error: Empty response from model."
         } catch (e: GenerativeAIException) {
-            e.printStackTrace()
-            "Error: ${e.message}"
-        }
-    }
-
-    private suspend fun geminiLlmCall(prompt: String, apiKey: String): String {
-        return try {
-            val generativeModel = Firebase.genai.generativeModel(
-                modelName = "gemini-pro",
-                apiKey = apiKey
-            )
-            val response = generativeModel.generateContent(prompt)
-            response.text ?: "Error: Empty response from Gemini API."
-        } catch (e: Exception) {
             e.printStackTrace()
             "Error: ${e.message}"
         }
@@ -263,7 +230,6 @@ class MainActivity : AppCompatActivity() {
         binding.progressText.visibility = if (isLoading) View.VISIBLE else View.GONE
         binding.runBatchButton.isEnabled = !isLoading
         binding.selectFileButton.isEnabled = !isLoading
-        binding.pauseSeekBar.isEnabled = !isLoading
         binding.resultsLink.visibility = if (resultsReady) View.VISIBLE else View.GONE
         if (resultsReady) {
             binding.progressText.visibility = View.GONE
@@ -274,13 +240,13 @@ class MainActivity : AppCompatActivity() {
         resultFile?.let { file ->
             val uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", file)
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/json")
+                setDataAndType(uri, "text/plain")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             try {
                 startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(this, "No app found to open JSON files.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "No app found to open text files.", Toast.LENGTH_SHORT).show()
             }
         }
     }

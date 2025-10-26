@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-    id("com.google.gms.google-services")
 }
 
 android {
@@ -51,11 +50,6 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3") // Added for lifecycleScope
     implementation("com.google.ai.edge.aicore:aicore:0.0.1-exp02")
-
-    // Firebase
-    implementation(platform("com.google.firebase:firebase-bom:34.3.0"))
-    implementation("com.google.firebase:firebase-ai")
-
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

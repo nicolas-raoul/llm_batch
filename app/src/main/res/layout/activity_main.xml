@@ -26,32 +26,10 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:minHeight="48dp"
-        app:layout_constraintBottom_toTopOf="@+id/pauseLabel"
+        app:layout_constraintBottom_toTopOf="@+id/runBatchButton"
         app:layout_constraintEnd_toEndOf="@+id/selectFileButton"
         app:layout_constraintStart_toStartOf="@+id/selectFileButton"
         app:layout_constraintTop_toBottomOf="@+id/selectFileButton" />
-
-    <TextView
-        android:id="@+id/pauseLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        app:layout_constraintStart_toStartOf="@+id/modelSpinner"
-        app:layout_constraintTop_toBottomOf="@+id/modelSpinner"
-        app:layout_constraintBottom_toTopOf="@+id/pauseSeekBar"
-        tools:text="Pause: 500 ms" />
-
-    <SeekBar
-        android:id="@+id/pauseSeekBar"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:max="5000"
-        android:progress="500"
-        app:layout_constraintEnd_toEndOf="@+id/modelSpinner"
-        app:layout_constraintStart_toStartOf="@+id/modelSpinner"
-        app:layout_constraintTop_toBottomOf="@+id/pauseLabel"
-        app:layout_constraintBottom_toTopOf="@+id/runBatchButton"/>
 
     <Button
         android:id="@+id/runBatchButton"
@@ -62,7 +40,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="@+id/modelSpinner"
         app:layout_constraintStart_toStartOf="@+id/modelSpinner"
-        app:layout_constraintTop_toBottomOf="@+id/pauseSeekBar" />
+        app:layout_constraintTop_toBottomOf="@+id/modelSpinner" />
 
     <ProgressBar
         android:id="@+id/progressBar"
