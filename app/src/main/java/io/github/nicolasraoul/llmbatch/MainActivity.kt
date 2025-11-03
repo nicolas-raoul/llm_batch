@@ -24,6 +24,7 @@ import com.google.ai.edge.aicore.GenerativeModel as EdgeGenerativeModel
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.generationConfig as cloudGenerationConfig
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.GenerativeModel as MlkitGenerativeModel
 import io.github.nicolasraoul.llmbatch.databinding.ActivityMainBinding
@@ -310,16 +311,31 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun realMlkitLlmCall(prompt: String): Pair<String, Long> = withContext(Dispatchers.IO) {
-        return@withContext try {
-            var response: com.google.mlkit.genai.prompt.GenerateContentResponse?
-            val timeTaken = kotlin.system.measureTimeMillis {
-                response = mlkitModel?.generateContent(prompt)
+    private suspend fun realMlkitLlmCall(prompt: String): Pair<String, Long> {
+        var waitTime = INITIAL_WAIT_TIME
+        while (true) {
+            try {
+                var response: com.google.mlkit.genai.prompt.GenerateContentResponse?
+                val timeTaken = kotlin.system.measureTimeMillis {
+                    response = mlkitModel?.generateContent(prompt)
+                }
+                waitTime = INITIAL_WAIT_TIME // Reset wait time on success
+                return Pair(
+                    response?.candidates?.firstOrNull()?.text
+                        ?: "Error: Empty response from ML Kit API.", timeTaken
+                )
+            } catch (e: GenAiException) {
+                if (e.errorCode == 9) {
+                    delay(waitTime)
+                    waitTime *= 2
+                } else {
+                    e.printStackTrace()
+                    return Pair("Error: ML Kit API - ${e.message}", 0L)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                return Pair("Error: ML Kit API - ${e.message}", 0L)
             }
-            Pair(response?.candidates?.firstOrNull()?.text ?: "Error: Empty response from ML Kit API.", timeTaken)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Pair("Error: ML Kit API - ${e.message}", 0L)
         }
     }
 
