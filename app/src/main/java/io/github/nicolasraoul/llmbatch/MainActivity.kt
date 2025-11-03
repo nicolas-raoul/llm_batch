@@ -75,6 +75,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Activity result launcher for creating the sample prompts file
+    private val sampleFileCreatorLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
+        uri?.let {
+            createSamplePromptsFile(it)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -134,7 +141,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupClickListeners() {
         binding.createSampleButton.setOnClickListener {
-            createSamplePromptsFile()
+            Toast.makeText(this, "Where do you want me to create the sample file?", Toast.LENGTH_SHORT).show()
+            sampleFileCreatorLauncher.launch("sample_prompts.txt")
         }
 
         binding.selectFileButton.setOnClickListener {
@@ -154,15 +162,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun createSamplePromptsFile() {
+    private fun createSamplePromptsFile(uri: Uri) {
         val samplePrompts = """
             Why is the sky blue?
             How to implement edge-to-edge on Android?
         """.trimIndent()
         try {
-            val file = File(getExternalFilesDir(null), "sample_prompts.txt")
-            file.writeText(samplePrompts)
-            Toast.makeText(this, "sample_prompts.txt created in app's external directory", Toast.LENGTH_LONG).show()
+            contentResolver.openOutputStream(uri)?.use {
+                it.write(samplePrompts.toByteArray())
+            }
+            Toast.makeText(this, "Sample file created successfully", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             e.printStackTrace()
             Toast.makeText(this, "Error creating sample file: ${e.message}", Toast.LENGTH_LONG).show()
@@ -174,6 +183,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, getString(R.string.no_file_selected), Toast.LENGTH_SHORT).show()
             return
         }
+        Toast.makeText(this, "Where do you want me to generate the results file?", Toast.LENGTH_SHORT).show()
         val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
         fileCreatorLauncher.launch(outputFileName)
     }
