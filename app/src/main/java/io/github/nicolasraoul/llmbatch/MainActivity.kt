@@ -181,7 +181,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val prompts = readPromptsFromFile(promptsFileUri!!)
             val totalPrompts = prompts.size
-            val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.csv"
+            val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
             resultFile = File(getExternalFilesDir(null), outputFileName)
             val fileOutputStream = FileOutputStream(resultFile)
 
@@ -227,8 +227,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun escapeCsvField(data: String): String {
-        val escapedData = data.replace("\"", "\"\"")
-        return "\"$escapedData\""
+        val withEscapedQuotes = data.replace("\"", "\"\"")
+        val withEscapedNewlines = withEscapedQuotes.replace("\n", "\\n")
+        return "\"$withEscapedNewlines\""
     }
 
     private suspend fun readPromptsFromFile(uri: Uri): List<String> = withContext(Dispatchers.IO) {
@@ -291,13 +292,13 @@ class MainActivity : AppCompatActivity() {
         resultFile?.let { file ->
             val uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", file)
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "text/csv")
+                setDataAndType(uri, "text/plain")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             try {
                 startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(this, "No app found to open CSV files.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "No app found to open text files.", Toast.LENGTH_SHORT).show()
             }
         }
     }
