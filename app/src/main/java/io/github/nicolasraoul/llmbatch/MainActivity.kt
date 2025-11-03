@@ -24,6 +24,8 @@ import com.google.ai.edge.aicore.GenerativeModel as EdgeGenerativeModel
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.generationConfig as cloudGenerationConfig
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.mlkit.genai.prompt.Generation
+import com.google.mlkit.genai.prompt.GenerativeModel as MlkitGenerativeModel
 import io.github.nicolasraoul.llmbatch.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -44,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private var promptsFileUri: Uri? = null
     private var resultFile: File? = null
     private var edgeModel: EdgeGenerativeModel? = null
+    private var mlkitModel: MlkitGenerativeModel? = null
 
     // Activity result launcher for the file picker
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -69,11 +72,22 @@ class MainActivity : AppCompatActivity() {
         setupSpinner()
         setupClickListeners()
         initEdgeGenerativeModel()
+        initMlkitGenerativeModel()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         edgeModel?.close()
+        mlkitModel?.close()
+    }
+
+    private fun initMlkitGenerativeModel() {
+        try {
+            mlkitModel = Generation.getClient()
+        } catch (e: Exception) {
+            mlkitModel = null
+            e.printStackTrace()
+        }
     }
 
     private fun initEdgeGenerativeModel() {
@@ -94,7 +108,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSpinner() {
-        val models = listOf("Local Edge AI SDK", "Remote Gemini API")
+        val models = listOf("Local Edge AI SDK", "Remote Gemini API", "ML Kit Prompt API")
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, models)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.modelSpinner.adapter = adapter
@@ -124,15 +138,27 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             setUiState(isLoading = true)
-            if (selectedModel == "Remote Gemini API") {
-                setUiState(isLoading = false) // Hide progress bar while dialog is shown
-                showApiKeyDialog()
-            } else {
-                if (edgeModel != null) {
-                    processPrompts(selectedModel)
-                } else {
-                    setUiState(isLoading = false)
-                    showAiCoreSetupDialog()
+            when (selectedModel) {
+                "Remote Gemini API" -> {
+                    setUiState(isLoading = false) // Hide progress bar while dialog is shown
+                    showApiKeyDialog()
+                }
+                "Local Edge AI SDK" -> {
+                    if (edgeModel != null) {
+                        processPrompts(selectedModel)
+                    } else {
+                        setUiState(isLoading = false)
+                        showAiCoreSetupDialog()
+                    }
+                }
+                "ML Kit Prompt API" -> {
+                    if (mlkitModel != null) {
+                        processPrompts(selectedModel)
+                    } else {
+                        setUiState(isLoading = false)
+                        // You might want a different dialog for ML Kit setup issues
+                        showAiCoreSetupDialog()
+                    }
                 }
             }
         }
@@ -203,10 +229,11 @@ class MainActivity : AppCompatActivity() {
                 binding.progressText.text =
                     getString(R.string.processing_progress, index + 1, totalPrompts)
 
-                val (result, timeTaken) = if (modelName == "Local Edge AI SDK") {
-                    realEdgeLlmCall(prompt)
-                } else {
-                    realGeminiApiCall(geminiModel!!, prompt)
+                val (result, timeTaken) = when (modelName) {
+                    "Local Edge AI SDK" -> realEdgeLlmCall(prompt)
+                    "Remote Gemini API" -> realGeminiApiCall(geminiModel!!, prompt)
+                    "ML Kit Prompt API" -> realMlkitLlmCall(prompt)
+                    else -> Pair("Error: Unknown model", 0L)
                 }
 
                 val csvRecord = listOf(
@@ -280,6 +307,19 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             e.printStackTrace()
             Pair("Error: ${e.javaClass.simpleName} - ${e.message}", 0L)
+        }
+    }
+
+    private suspend fun realMlkitLlmCall(prompt: String): Pair<String, Long> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            var response: com.google.mlkit.genai.prompt.GenerateContentResponse?
+            val timeTaken = kotlin.system.measureTimeMillis {
+                response = mlkitModel?.generateContent(prompt)
+            }
+            Pair(response?.candidates?.firstOrNull()?.text ?: "Error: Empty response from ML Kit API.", timeTaken)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Pair("Error: ML Kit API - ${e.message}", 0L)
         }
     }
 

@@ -54,6 +54,7 @@ dependencies {
 
     // Google Generative AI SDK
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+    implementation("com.google.mlkit:genai-prompt:1.0.0-alpha1")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
