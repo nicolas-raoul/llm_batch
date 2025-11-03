@@ -19,8 +19,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.ai.edge.aicore.GenerativeAIException
-import com.google.ai.edge.aicore.GenerativeModel
-import com.google.ai.edge.aicore.generationConfig
+import com.google.ai.edge.aicore.GenerativeModel as EdgeGenerativeModel
+import com.google.ai.client.generativeai.GenerativeModel
+import com.google.ai.client.generativeai.type.generationConfig as cloudGenerationConfig
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.nicolasraoul.llmbatch.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var promptsFileUri: Uri? = null
     private var resultFile: File? = null
-    private var model: GenerativeModel? = null
+    private var edgeModel: EdgeGenerativeModel? = null
 
     // Activity result launcher for the file picker
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -61,18 +62,18 @@ class MainActivity : AppCompatActivity() {
 
         setupSpinner()
         setupClickListeners()
-        initGenerativeModel()
+        initEdgeGenerativeModel()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        model?.close()
+        edgeModel?.close()
     }
 
-    private fun initGenerativeModel() {
+    private fun initEdgeGenerativeModel() {
         try {
-            model = GenerativeModel(
-                generationConfig {
+            edgeModel = EdgeGenerativeModel(
+                com.google.ai.edge.aicore.generationConfig {
                     context = applicationContext
                     temperature = 0.2f
                     topK = 16
@@ -81,7 +82,7 @@ class MainActivity : AppCompatActivity() {
             )
         } catch (e: Exception) {
             // Model initialization can fail if AI Core is not available.
-            model = null
+            edgeModel = null
             e.printStackTrace()
         }
     }
@@ -121,7 +122,7 @@ class MainActivity : AppCompatActivity() {
                 setUiState(isLoading = false) // Hide progress bar while dialog is shown
                 showApiKeyDialog()
             } else {
-                if (model != null) {
+                if (edgeModel != null) {
                     processPrompts(selectedModel)
                 } else {
                     setUiState(isLoading = false)
@@ -140,9 +141,10 @@ class MainActivity : AppCompatActivity() {
             .setTitle(getString(R.string.gemini_api_key_title))
             .setView(input)
             .setPositiveButton(getString(R.string.ok)) { _, _ ->
-                val apiKey = input.text.toString()
+                val apiKey = input.text.toString().trim()
                 if (apiKey.isNotBlank()) {
                     lifecycleScope.launch {
+                        setUiState(isLoading = true)
                         processPrompts("Remote Gemini API", apiKey)
                     }
                 }
@@ -178,13 +180,25 @@ class MainActivity : AppCompatActivity() {
             resultFile = File(getExternalFilesDir(null), outputFileName)
             val fileOutputStream = FileOutputStream(resultFile)
 
+            // Create Gemini API model if using remote
+            val geminiModel = if (modelName == "Remote Gemini API" && apiKey != null) {
+                GenerativeModel(
+                    modelName = "gemini-2.5-flash-lite",
+                    apiKey = apiKey,
+                    generationConfig = cloudGenerationConfig {
+                        temperature = 0.2f
+                        topK = 16
+                        maxOutputTokens = 1024
+                    }
+                )
+            } else null
+
             prompts.forEachIndexed { index, prompt ->
                 binding.progressText.text = getString(R.string.processing_progress, index + 1, totalPrompts)
                 val result = if (modelName == "Local Edge AI SDK") {
-                    realLlmCall(prompt)
+                    realEdgeLlmCall(prompt)
                 } else {
-                    // Placeholder for remote call logic if it were real
-                    "Gemini (key: ${apiKey?.take(4)}...) response for '$prompt'"
+                    realGeminiApiCall(geminiModel!!, prompt)
                 }
                 val formattedResult = if (result.startsWith("Error:")) {
                     "Prompt: $prompt -> $result\n"
@@ -215,13 +229,26 @@ class MainActivity : AppCompatActivity() {
         prompts
     }
 
-    private suspend fun realLlmCall(prompt: String): String {
+    private suspend fun realEdgeLlmCall(prompt: String): String {
         return try {
-            val response = model?.generateContent(prompt)
+            val response = edgeModel?.generateContent(prompt)
             response?.text ?: "Error: Empty response from model."
         } catch (e: GenerativeAIException) {
             e.printStackTrace()
             "Error: ${e.message}"
+        }
+    }
+
+    private suspend fun realGeminiApiCall(model: GenerativeModel, prompt: String): String = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val response = model.generateContent(prompt)
+            response.text ?: "Error: Empty response from Gemini API."
+        } catch (e: com.google.ai.client.generativeai.type.GoogleGenerativeAIException) {
+            e.printStackTrace()
+            "Error: Gemini API - ${e.message}"
+        } catch (e: Exception) {
+            e.printStackTrace()
+            "Error: ${e.javaClass.simpleName} - ${e.message}"
         }
     }
 
