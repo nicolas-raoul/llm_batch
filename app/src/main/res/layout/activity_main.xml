@@ -7,18 +7,54 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <ImageView
+        android:id="@+id/appIcon"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:layout_marginTop="32dp"
+        android:src="@mipmap/ic_launcher"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:contentDescription="App Icon" />
+
+    <TextView
+        android:id="@+id/appName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="LLM Batch"
+        android:textAppearance="@style/TextAppearance.AppCompat.Large"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/appIcon" />
+
+    <Button
+        android:id="@+id/createSampleButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:text="Create sample prompts file"
+        app:layout_constraintBottom_toTopOf="@+id/selectFileButton"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/appName"
+        app:layout_constraintVertical_bias="0.8"
+        app:layout_constraintVertical_chainStyle="packed" />
+
     <Button
         android:id="@+id/selectFileButton"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
+        android:layout_marginTop="8dp"
         android:text="@string/select_prompts"
         app:layout_constraintBottom_toTopOf="@+id/modelSpinner"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_chainStyle="packed" />
+        app:layout_constraintTop_toBottomOf="@+id/createSampleButton" />
 
     <Spinner
         android:id="@+id/modelSpinner"
@@ -41,6 +77,18 @@
         app:layout_constraintEnd_toEndOf="@+id/modelSpinner"
         app:layout_constraintStart_toStartOf="@+id/modelSpinner"
         app:layout_constraintTop_toBottomOf="@+id/modelSpinner" />
+
+    <Button
+        android:id="@+id/stopButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Stop"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@+id/runBatchButton"
+        app:layout_constraintEnd_toEndOf="@+id/runBatchButton"
+        app:layout_constraintStart_toStartOf="@+id/runBatchButton"
+        app:layout_constraintTop_toTopOf="@+id/runBatchButton"
+        tools:visibility="visible" />
 
     <ProgressBar
         android:id="@+id/progressBar"

@@ -45,16 +45,33 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var promptsFileUri: Uri? = null
-    private var resultFile: File? = null
+    private var resultsFileUri: Uri? = null
     private var edgeModel: EdgeGenerativeModel? = null
     private var mlkitModel: MlkitGenerativeModel? = null
+    @Volatile
+    private var isProcessing = false
 
-    // Activity result launcher for the file picker
+    // Activity result launcher for picking the prompts file
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             promptsFileUri = it
             val fileName = getFileName(it)
             binding.selectFileButton.text = fileName
+        }
+    }
+
+    // Activity result launcher for creating the results file
+    private val fileCreatorLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
+        uri?.let {
+            resultsFileUri = it
+            val selectedModel = binding.modelSpinner.selectedItem.toString()
+            if (selectedModel == "Remote Gemini API") {
+                showApiKeyDialog(it)
+            } else {
+                lifecycleScope.launch {
+                    processPrompts(selectedModel, outputUri = it)
+                }
+            }
         }
     }
 
@@ -109,13 +126,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSpinner() {
-        val models = listOf("Local Edge AI SDK", "Remote Gemini API", "ML Kit Prompt API")
+        val models = listOf("ML Kit Prompt API", "Local Edge AI SDK", "Remote Gemini API")
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, models)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.modelSpinner.adapter = adapter
     }
 
     private fun setupClickListeners() {
+        binding.createSampleButton.setOnClickListener {
+            createSamplePromptsFile()
+        }
+
         binding.selectFileButton.setOnClickListener {
             filePickerLauncher.launch("text/plain")
         }
@@ -124,8 +145,27 @@ class MainActivity : AppCompatActivity() {
             handleRunBatch()
         }
 
+        binding.stopButton.setOnClickListener {
+            isProcessing = false
+        }
+
         binding.resultsLink.setOnClickListener {
             openResultsFile()
+        }
+    }
+
+    private fun createSamplePromptsFile() {
+        val samplePrompts = """
+            Why is the sky blue?
+            How to implement edge-to-edge on Android?
+        """.trimIndent()
+        try {
+            val file = File(getExternalFilesDir(null), "sample_prompts.txt")
+            file.writeText(samplePrompts)
+            Toast.makeText(this, "sample_prompts.txt created in app's external directory", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Error creating sample file: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -134,38 +174,11 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, getString(R.string.no_file_selected), Toast.LENGTH_SHORT).show()
             return
         }
-
-        val selectedModel = binding.modelSpinner.selectedItem.toString()
-
-        lifecycleScope.launch {
-            setUiState(isLoading = true)
-            when (selectedModel) {
-                "Remote Gemini API" -> {
-                    setUiState(isLoading = false) // Hide progress bar while dialog is shown
-                    showApiKeyDialog()
-                }
-                "Local Edge AI SDK" -> {
-                    if (edgeModel != null) {
-                        processPrompts(selectedModel)
-                    } else {
-                        setUiState(isLoading = false)
-                        showAiCoreSetupDialog()
-                    }
-                }
-                "ML Kit Prompt API" -> {
-                    if (mlkitModel != null) {
-                        processPrompts(selectedModel)
-                    } else {
-                        setUiState(isLoading = false)
-                        // You might want a different dialog for ML Kit setup issues
-                        showAiCoreSetupDialog()
-                    }
-                }
-            }
-        }
+        val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
+        fileCreatorLauncher.launch(outputFileName)
     }
 
-    private fun showApiKeyDialog() {
+    private fun showApiKeyDialog(outputUri: Uri) {
         val input = EditText(this).apply {
             hint = getString(R.string.api_key)
         }
@@ -178,7 +191,7 @@ class MainActivity : AppCompatActivity() {
                 if (apiKey.isNotBlank()) {
                     lifecycleScope.launch {
                         setUiState(isLoading = true)
-                        processPrompts("Remote Gemini API", apiKey)
+                        processPrompts("Remote Gemini API", apiKey, outputUri)
                     }
                 }
             }
@@ -203,15 +216,13 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private suspend fun processPrompts(modelName: String, apiKey: String? = null) {
+    private suspend fun processPrompts(modelName: String, apiKey: String? = null, outputUri: Uri) {
         setUiState(isLoading = true)
 
         try {
             val prompts = readPromptsFromFile(promptsFileUri!!)
             val totalPrompts = prompts.size
-            val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
-            resultFile = File(getExternalFilesDir(null), outputFileName)
-            val fileOutputStream = FileOutputStream(resultFile)
+            contentResolver.openOutputStream(outputUri)?.use { fileOutputStream ->
 
             // Create Gemini API model if using remote
             val geminiModel = if (modelName == "Remote Gemini API" && apiKey != null) {
@@ -226,7 +237,10 @@ class MainActivity : AppCompatActivity() {
                 )
             } else null
 
-            prompts.forEachIndexed { index, prompt ->
+            for ((index, prompt) in prompts.withIndex()) {
+                if (!isProcessing) {
+                    break
+                }
                 binding.progressText.text =
                     getString(R.string.processing_progress, index + 1, totalPrompts)
 
@@ -245,7 +259,7 @@ class MainActivity : AppCompatActivity() {
                 Log.d("LLM_BATCH_CSV", csvRecord.trim())
                 fileOutputStream.write(csvRecord.toByteArray())
             }
-            fileOutputStream.close()
+            }
             setUiState(isLoading = false, resultsReady = true)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -340,9 +354,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setUiState(isLoading: Boolean, resultsReady: Boolean = false) {
+        isProcessing = isLoading
         binding.progressBar.visibility = if (isLoading) View.VISIBLE else View.GONE
         binding.progressText.visibility = if (isLoading) View.VISIBLE else View.GONE
-        binding.runBatchButton.isEnabled = !isLoading
+        binding.runBatchButton.visibility = if (isLoading) View.GONE else View.VISIBLE
+        binding.stopButton.visibility = if (isLoading) View.VISIBLE else View.GONE
         binding.selectFileButton.isEnabled = !isLoading
         binding.resultsLink.visibility = if (resultsReady) View.VISIBLE else View.GONE
         if (resultsReady) {
@@ -351,8 +367,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openResultsFile() {
-        resultFile?.let { file ->
-            val uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", file)
+        resultsFileUri?.let { uri ->
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "text/plain")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
