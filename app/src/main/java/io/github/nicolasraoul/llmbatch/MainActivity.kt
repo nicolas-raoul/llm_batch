@@ -35,6 +35,10 @@ import java.io.InputStreamReader
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val INITIAL_WAIT_TIME = 100L
+    }
+
     private lateinit var binding: ActivityMainBinding
     private var promptsFileUri: Uri? = null
     private var resultFile: File? = null
@@ -231,16 +235,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun realEdgeLlmCall(prompt: String): String {
-        var waitTime = 100L
+        var waitTime = INITIAL_WAIT_TIME
         while (true) {
             try {
                 val response = edgeModel?.generateContent(prompt)
-                waitTime = 100L // Reset wait time on success
+                waitTime = INITIAL_WAIT_TIME // Reset wait time on success
                 return response?.text ?: "Error: Empty response from model."
             } catch (e: GenerativeAIException) {
-                if (e.errorCode == GenerativeAIException.ErrorCode.BUSY ||
-                    e.errorCode == GenerativeAIException.ErrorCode.PER_APP_BATTERY_USE_QUOTA_EXCEEDED
-                ) {
+                if (e.errorCode == GenerativeAIException.ErrorCode.BUSY) {
                     delay(waitTime)
                     waitTime *= 2
                 } else {
