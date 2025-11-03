@@ -181,7 +181,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val prompts = readPromptsFromFile(promptsFileUri!!)
             val totalPrompts = prompts.size
-            val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
+            val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.csv"
             resultFile = File(getExternalFilesDir(null), outputFileName)
             val fileOutputStream = FileOutputStream(resultFile)
 
@@ -199,18 +199,23 @@ class MainActivity : AppCompatActivity() {
             } else null
 
             prompts.forEachIndexed { index, prompt ->
-                binding.progressText.text = getString(R.string.processing_progress, index + 1, totalPrompts)
-                val result = if (modelName == "Local Edge AI SDK") {
-                    realEdgeLlmCall(prompt)
-                } else {
-                    realGeminiApiCall(geminiModel!!, prompt)
+                binding.progressText.text =
+                    getString(R.string.processing_progress, index + 1, totalPrompts)
+
+                var result: String
+                val timeTaken = kotlin.system.measureTimeMillis {
+                    result = if (modelName == "Local Edge AI SDK") {
+                        realEdgeLlmCall(prompt)
+                    } else {
+                        realGeminiApiCall(geminiModel!!, prompt)
+                    }
                 }
-                val formattedResult = if (result.startsWith("Error:")) {
-                    "Prompt: $prompt -> $result\n"
-                } else {
-                    "Prompt: $prompt -> Result: $result\n"
-                }
-                fileOutputStream.write(formattedResult.toByteArray())
+                val csvRecord = listOf(
+                    escapeCsvField(prompt),
+                    escapeCsvField(result),
+                    "\"$timeTaken milliseconds\""
+                ).joinToString(separator = ",") + "\n"
+                fileOutputStream.write(csvRecord.toByteArray())
             }
             fileOutputStream.close()
             setUiState(isLoading = false, resultsReady = true)
@@ -219,6 +224,11 @@ class MainActivity : AppCompatActivity() {
             setUiState(isLoading = false)
             Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun escapeCsvField(data: String): String {
+        val escapedData = data.replace("\"", "\"\"")
+        return "\"$escapedData\""
     }
 
     private suspend fun readPromptsFromFile(uri: Uri): List<String> = withContext(Dispatchers.IO) {
@@ -281,13 +291,13 @@ class MainActivity : AppCompatActivity() {
         resultFile?.let { file ->
             val uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", file)
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "text/plain")
+                setDataAndType(uri, "text/csv")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             try {
                 startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(this, "No app found to open text files.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "No app found to open CSV files.", Toast.LENGTH_SHORT).show()
             }
         }
     }
