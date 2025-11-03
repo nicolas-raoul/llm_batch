@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.text.Html
 import android.text.method.LinkMovementMethod
+import android.util.Log
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
@@ -213,6 +214,7 @@ class MainActivity : AppCompatActivity() {
                     escapeCsvField(result),
                     "\"$timeTaken milliseconds\""
                 ).joinToString(separator = ",") + "\n"
+                Log.d("LLM_BATCH_CSV", csvRecord.trim())
                 fileOutputStream.write(csvRecord.toByteArray())
             }
             fileOutputStream.close()
