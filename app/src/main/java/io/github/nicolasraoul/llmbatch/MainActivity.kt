@@ -202,14 +202,12 @@ class MainActivity : AppCompatActivity() {
                 binding.progressText.text =
                     getString(R.string.processing_progress, index + 1, totalPrompts)
 
-                var result: String
-                val timeTaken = kotlin.system.measureTimeMillis {
-                    result = if (modelName == "Local Edge AI SDK") {
-                        realEdgeLlmCall(prompt)
-                    } else {
-                        realGeminiApiCall(geminiModel!!, prompt)
-                    }
+                val (result, timeTaken) = if (modelName == "Local Edge AI SDK") {
+                    realEdgeLlmCall(prompt)
+                } else {
+                    realGeminiApiCall(geminiModel!!, prompt)
                 }
+
                 val csvRecord = listOf(
                     escapeCsvField(prompt),
                     escapeCsvField(result),
@@ -245,35 +243,41 @@ class MainActivity : AppCompatActivity() {
         prompts
     }
 
-    private suspend fun realEdgeLlmCall(prompt: String): String {
+    private suspend fun realEdgeLlmCall(prompt: String): Pair<String, Long> {
         var waitTime = INITIAL_WAIT_TIME
         while (true) {
             try {
-                val response = edgeModel?.generateContent(prompt)
+                var response: com.google.ai.edge.aicore.GenerateContentResponse?
+                val timeTaken = kotlin.system.measureTimeMillis {
+                    response = edgeModel?.generateContent(prompt)
+                }
                 waitTime = INITIAL_WAIT_TIME // Reset wait time on success
-                return response?.text ?: "Error: Empty response from model."
+                return Pair(response?.text ?: "Error: Empty response from model.", timeTaken)
             } catch (e: GenerativeAIException) {
                 if (e.errorCode == GenerativeAIException.ErrorCode.BUSY) {
                     delay(waitTime)
                     waitTime *= 2
                 } else {
                     e.printStackTrace()
-                    return "Error: ${e.message}"
+                    return Pair("Error: ${e.message}", 0L)
                 }
             }
         }
     }
 
-    private suspend fun realGeminiApiCall(model: GenerativeModel, prompt: String): String = withContext(Dispatchers.IO) {
+    private suspend fun realGeminiApiCall(model: GenerativeModel, prompt: String): Pair<String, Long> = withContext(Dispatchers.IO) {
         return@withContext try {
-            val response = model.generateContent(prompt)
-            response.text ?: "Error: Empty response from Gemini API."
+            var response: com.google.ai.client.generativeai.type.GenerateContentResponse?
+            val timeTaken = kotlin.system.measureTimeMillis {
+                response = model.generateContent(prompt)
+            }
+            Pair(response?.text ?: "Error: Empty response from Gemini API.", timeTaken)
         } catch (e: com.google.ai.client.generativeai.type.GoogleGenerativeAIException) {
             e.printStackTrace()
-            "Error: Gemini API - ${e.message}"
+            Pair("Error: Gemini API - ${e.message}", 0L)
         } catch (e: Exception) {
             e.printStackTrace()
-            "Error: ${e.javaClass.simpleName} - ${e.message}"
+            Pair("Error: ${e.javaClass.simpleName} - ${e.message}", 0L)
         }
     }
 
