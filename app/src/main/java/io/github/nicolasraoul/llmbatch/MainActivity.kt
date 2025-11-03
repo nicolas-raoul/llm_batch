@@ -25,6 +25,7 @@ import com.google.ai.client.generativeai.type.generationConfig as cloudGeneratio
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.nicolasraoul.llmbatch.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -230,12 +231,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun realEdgeLlmCall(prompt: String): String {
-        return try {
-            val response = edgeModel?.generateContent(prompt)
-            response?.text ?: "Error: Empty response from model."
-        } catch (e: GenerativeAIException) {
-            e.printStackTrace()
-            "Error: ${e.message}"
+        var waitTime = 100L
+        while (true) {
+            try {
+                val response = edgeModel?.generateContent(prompt)
+                waitTime = 100L // Reset wait time on success
+                return response?.text ?: "Error: Empty response from model."
+            } catch (e: GenerativeAIException) {
+                if (e.errorCode == GenerativeAIException.ErrorCode.BUSY ||
+                    e.errorCode == GenerativeAIException.ErrorCode.PER_APP_BATTERY_USE_QUOTA_EXCEEDED
+                ) {
+                    delay(waitTime)
+                    waitTime *= 2
+                } else {
+                    e.printStackTrace()
+                    return "Error: ${e.message}"
+                }
+            }
         }
     }
 
