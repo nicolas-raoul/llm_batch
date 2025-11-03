@@ -40,7 +40,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/appName"
-        app:layout_constraintVertical_bias="0.8"
+        app:layout_constraintVertical_bias="0.3"
         app:layout_constraintVertical_chainStyle="packed" />
 
     <Button
@@ -84,10 +84,11 @@
         android:layout_height="wrap_content"
         android:text="Stop"
         android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="@+id/runBatchButton"
-        app:layout_constraintEnd_toEndOf="@+id/runBatchButton"
-        app:layout_constraintStart_toStartOf="@+id/runBatchButton"
-        app:layout_constraintTop_toTopOf="@+id/runBatchButton"
+        app:layout_constraintTop_toBottomOf="@id/modelSpinner"
+        app:layout_constraintEnd_toEndOf="@+id/modelSpinner"
+        app:layout_constraintStart_toStartOf="@+id/modelSpinner"
+        app:layout_constraintBottom_toBottomOf="parent"
+        android:layout_marginTop="16dp"
         tools:visibility="visible" />
 
     <ProgressBar
