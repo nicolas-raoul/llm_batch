@@ -26,6 +26,9 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.GenerativeModel as MlkitGenerativeModel
+import com.google.mlkit.genai.prompt.PromptPrefix
+import com.google.mlkit.genai.prompt.TextPart
+import com.google.mlkit.genai.prompt.generateContentRequest
 import io.github.nicolasraoul.llmbatch.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -357,10 +360,9 @@ class MainActivity : AppCompatActivity() {
         var waitTime = INITIAL_WAIT_TIME
         while (true) {
             try {
-                val request = com.google.mlkit.genai.prompt.GenerateContentRequest.Builder()
-                    .setPromptPrefix(prefix)
-                    .setPrompt(suffix)
-                    .build()
+                val request = generateContentRequest(TextPart(suffix)) {
+                    promptPrefix = PromptPrefix(prefix)
+                }
                 var response: com.google.mlkit.genai.prompt.GenerateContentResponse?
                 val timeTaken = kotlin.system.measureTimeMillis {
                     response = mlkitModel?.generateContent(request)
