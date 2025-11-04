@@ -357,10 +357,10 @@ class MainActivity : AppCompatActivity() {
         var waitTime = INITIAL_WAIT_TIME
         while (true) {
             try {
-                val request = com.google.mlkit.genai.prompt.generateContent {
-                    promptPrefix = prefix
-                    prompt(suffix)
-                }
+                val request = com.google.mlkit.genai.prompt.GenerateContentRequest.Builder()
+                    .setPromptPrefix(prefix)
+                    .setPrompt(suffix)
+                    .build()
                 var response: com.google.mlkit.genai.prompt.GenerateContentResponse?
                 val timeTaken = kotlin.system.measureTimeMillis {
                     response = mlkitModel?.generateContent(request)
