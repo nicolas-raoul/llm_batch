@@ -15,7 +15,6 @@ import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
@@ -33,9 +32,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
-import java.io.File
-import java.io.FileOutputStream
 import java.io.InputStreamReader
+
+private const val LOCAL_ML_KIT_PROMPT_API = "(local) ML Kit Prompt API"
+private const val LOCAL_EDGE_AI_SDK = "(local) Edge AI SDK"
+private const val REMOTE_GEMINI = "(remote) Gemini 2.5 Flash Lite API"
 
 class MainActivity : AppCompatActivity() {
 
@@ -65,7 +66,7 @@ class MainActivity : AppCompatActivity() {
         uri?.let {
             resultsFileUri = it
             val selectedModel = binding.modelSpinner.selectedItem.toString()
-            if (selectedModel == "Remote Gemini API") {
+            if (selectedModel == REMOTE_GEMINI) {
                 showApiKeyDialog(it)
             } else {
                 lifecycleScope.launch {
@@ -133,7 +134,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSpinner() {
-        val models = listOf("ML Kit Prompt API", "Local Edge AI SDK", "Remote Gemini API")
+        val models = listOf(LOCAL_ML_KIT_PROMPT_API, LOCAL_EDGE_AI_SDK, REMOTE_GEMINI)
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, models)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.modelSpinner.adapter = adapter
@@ -184,7 +185,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         Toast.makeText(this, "Where do you want me to generate the results file?", Toast.LENGTH_SHORT).show()
-        val outputFileName = getFileName(promptsFileUri!!).replace(".txt", "") + "_results.txt"
+        val outputFileName = "results_" + getFileName(promptsFileUri!!)
         fileCreatorLauncher.launch(outputFileName)
     }
 
@@ -201,7 +202,7 @@ class MainActivity : AppCompatActivity() {
                 if (apiKey.isNotBlank()) {
                     lifecycleScope.launch {
                         setUiState(isLoading = true)
-                        processPrompts("Remote Gemini API", apiKey, outputUri)
+                        processPrompts(REMOTE_GEMINI, apiKey, outputUri)
                     }
                 }
             }
@@ -235,7 +236,7 @@ class MainActivity : AppCompatActivity() {
             contentResolver.openOutputStream(outputUri)?.use { fileOutputStream ->
 
             // Create Gemini API model if using remote
-            val geminiModel = if (modelName == "Remote Gemini API" && apiKey != null) {
+            val geminiModel = if (modelName == REMOTE_GEMINI && apiKey != null) {
                 GenerativeModel(
                     modelName = "gemini-2.5-flash-lite",
                     apiKey = apiKey,
@@ -255,9 +256,9 @@ class MainActivity : AppCompatActivity() {
                     getString(R.string.processing_progress, index + 1, totalPrompts)
 
                 val (result, timeTaken) = when (modelName) {
-                    "Local Edge AI SDK" -> realEdgeLlmCall(prompt)
-                    "Remote Gemini API" -> realGeminiApiCall(geminiModel!!, prompt)
-                    "ML Kit Prompt API" -> realMlkitLlmCall(prompt)
+                    LOCAL_EDGE_AI_SDK -> realEdgeLlmCall(prompt)
+                    REMOTE_GEMINI -> realGeminiApiCall(geminiModel!!, prompt)
+                    LOCAL_ML_KIT_PROMPT_API -> realMlkitLlmCall(prompt)
                     else -> Pair("Error: Unknown model", 0L)
                 }
 
