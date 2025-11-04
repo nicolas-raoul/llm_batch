@@ -29,6 +29,7 @@ import com.google.mlkit.genai.prompt.GenerativeModel as MlkitGenerativeModel
 import com.google.mlkit.genai.prompt.PromptPrefix
 import com.google.mlkit.genai.prompt.TextPart
 import com.google.mlkit.genai.prompt.generateContentRequest
+import com.google.mlkit.genai.prompt.GenerateContentRequest
 import io.github.nicolasraoul.llmbatch.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -40,6 +41,8 @@ import java.io.InputStreamReader
 private const val LOCAL_ML_KIT_PROMPT_API = "(local) ML Kit Prompt API"
 private const val LOCAL_EDGE_AI_SDK = "(local) Edge AI SDK"
 private const val REMOTE_GEMINI = "(remote) Gemini 2.5 Flash Lite API"
+
+private const val USE_PREFIX_CACHING = false
 
 class MainActivity : AppCompatActivity() {
 
@@ -290,11 +293,6 @@ class MainActivity : AppCompatActivity() {
         } finally {
             if (modelName == LOCAL_ML_KIT_PROMPT_API) {
                 mlkitModel?.clearCaches()
-                // Using withContext to show Toast on the main thread from a coroutine
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Prefix cache cleared.", Toast.LENGTH_SHORT)
-                        .show()
-                }
             }
         }
     }
@@ -360,8 +358,12 @@ class MainActivity : AppCompatActivity() {
         var waitTime = INITIAL_WAIT_TIME
         while (true) {
             try {
-                val request = generateContentRequest(TextPart(suffix)) {
-                    promptPrefix = PromptPrefix(prefix)
+                val request = if (USE_PREFIX_CACHING) {
+                    generateContentRequest(TextPart(suffix)) {
+                        promptPrefix = PromptPrefix(prefix)
+                    }
+                } else {
+                    GenerateContentRequest.Builder(TextPart(prefix + suffix)).build()
                 }
                 var response: com.google.mlkit.genai.prompt.GenerateContentResponse?
                 val timeTaken = kotlin.system.measureTimeMillis {
