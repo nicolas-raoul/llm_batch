@@ -233,49 +233,66 @@ class MainActivity : AppCompatActivity() {
         try {
             val prompts = readPromptsFromFile(promptsFileUri!!)
             val totalPrompts = prompts.size
+
+            // Prefix Caching: Find the common prefix
+            val commonPrefixLength = findCommonPrefixLength(prompts)
+            val commonPrefix = if (commonPrefixLength > 0) prompts[0].substring(0, commonPrefixLength) else ""
+
             contentResolver.openOutputStream(outputUri)?.use { fileOutputStream ->
 
-            // Create Gemini API model if using remote
-            val geminiModel = if (modelName == REMOTE_GEMINI && apiKey != null) {
-                GenerativeModel(
-                    modelName = "gemini-2.5-flash-lite",
-                    apiKey = apiKey,
-                    generationConfig = cloudGenerationConfig {
-                        temperature = 0.2f
-                        topK = 16
-                        maxOutputTokens = 1024
+                // Create Gemini API model if using remote
+                val geminiModel = if (modelName == REMOTE_GEMINI && apiKey != null) {
+                    GenerativeModel(
+                        modelName = "gemini-2.5-flash-lite",
+                        apiKey = apiKey,
+                        generationConfig = cloudGenerationConfig {
+                            temperature = 0.2f
+                            topK = 16
+                            maxOutputTokens = 1024
+                        }
+                    )
+                } else null
+
+                for ((index, prompt) in prompts.withIndex()) {
+                    if (!isProcessing) {
+                        break
                     }
-                )
-            } else null
+                    binding.progressText.text =
+                        getString(R.string.processing_progress, index + 1, totalPrompts)
 
-            for ((index, prompt) in prompts.withIndex()) {
-                if (!isProcessing) {
-                    break
+                    // Prefix Caching: Separate prefix and suffix
+                    val dynamicSuffix = if (commonPrefixLength > 0) prompt.substring(commonPrefixLength) else prompt
+
+                    val (result, timeTaken) = when (modelName) {
+                        LOCAL_EDGE_AI_SDK -> realEdgeLlmCall(prompt)
+                        REMOTE_GEMINI -> realGeminiApiCall(geminiModel!!, prompt)
+                        LOCAL_ML_KIT_PROMPT_API -> realMlkitLlmCall(commonPrefix, dynamicSuffix)
+                        else -> Pair("Error: Unknown model", 0L)
+                    }
+
+                    val csvRecord = listOf(
+                        escapeCsvField(prompt),
+                        escapeCsvField(result),
+                        "\"$timeTaken milliseconds\""
+                    ).joinToString(separator = ",") + "\n"
+                    Log.d("LLM_BATCH_CSV", csvRecord.trim())
+                    fileOutputStream.write(csvRecord.toByteArray())
                 }
-                binding.progressText.text =
-                    getString(R.string.processing_progress, index + 1, totalPrompts)
-
-                val (result, timeTaken) = when (modelName) {
-                    LOCAL_EDGE_AI_SDK -> realEdgeLlmCall(prompt)
-                    REMOTE_GEMINI -> realGeminiApiCall(geminiModel!!, prompt)
-                    LOCAL_ML_KIT_PROMPT_API -> realMlkitLlmCall(prompt)
-                    else -> Pair("Error: Unknown model", 0L)
-                }
-
-                val csvRecord = listOf(
-                    escapeCsvField(prompt),
-                    escapeCsvField(result),
-                    "\"$timeTaken milliseconds\""
-                ).joinToString(separator = ",") + "\n"
-                Log.d("LLM_BATCH_CSV", csvRecord.trim())
-                fileOutputStream.write(csvRecord.toByteArray())
-            }
             }
             setUiState(isLoading = false, resultsReady = true)
         } catch (e: Exception) {
             e.printStackTrace()
             setUiState(isLoading = false)
             Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+        } finally {
+            if (modelName == LOCAL_ML_KIT_PROMPT_API) {
+                mlkitModel?.clearCaches()
+                // Using withContext to show Toast on the main thread from a coroutine
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Prefix cache cleared.", Toast.LENGTH_SHORT)
+                        .show()
+                }
+            }
         }
     }
 
@@ -336,13 +353,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun realMlkitLlmCall(prompt: String): Pair<String, Long> {
+    private suspend fun realMlkitLlmCall(prefix: String, suffix: String): Pair<String, Long> {
         var waitTime = INITIAL_WAIT_TIME
         while (true) {
             try {
+                val request = com.google.mlkit.genai.prompt.generateContent {
+                    promptPrefix = prefix
+                    prompt(suffix)
+                }
                 var response: com.google.mlkit.genai.prompt.GenerateContentResponse?
                 val timeTaken = kotlin.system.measureTimeMillis {
-                    response = mlkitModel?.generateContent(prompt)
+                    response = mlkitModel?.generateContent(request)
                 }
                 waitTime = INITIAL_WAIT_TIME // Reset wait time on success
                 return Pair(
@@ -411,5 +432,43 @@ class MainActivity : AppCompatActivity() {
             }
         }
         return result ?: "prompts.txt"
+    }
+
+    /**
+     * Finds the length of the longest common prefix among a list of strings
+     * using the efficient vertical scanning method.
+     *
+     * @param strings The list of strings to check.
+     * @return The length of the longest common prefix.
+     */
+    private fun findCommonPrefixLength(strings: List<String>): Int {
+        // If the list is empty, there is no prefix.
+        if (strings.isEmpty()) {
+            return 0
+        }
+
+        // Use the first string as the reference.
+        val firstString = strings[0]
+
+        // Iterate through each character index of the first string.
+        for (i in firstString.indices) {
+            val charToCompare = firstString[i]
+
+            // Check this character against all other strings in the list.
+            // We start from j=1 since strings[0] is our reference.
+            for (j in 1 until strings.size) {
+                val currentString = strings[j]
+
+                // If the other string is shorter OR the character doesn't match,
+                // we've found the end of the common prefix.
+                if (i >= currentString.length || currentString[i] != charToCompare) {
+                    // The length is the current index 'i'.
+                    return i
+                }
+            }
+        }
+
+        // If the loop completes, the entire first string is the common prefix.
+        return firstString.length
     }
 }
