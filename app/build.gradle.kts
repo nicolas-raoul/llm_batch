@@ -51,7 +51,6 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3") // Added for lifecycleScope
     implementation("com.google.ai.edge.aicore:aicore:0.0.1-exp02")
-
     // Google Generative AI SDK
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
     implementation("com.google.mlkit:genai-prompt:1.0.0-alpha1")

@@ -18,8 +18,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
-import com.google.ai.edge.aicore.GenerativeAIException
-import com.google.ai.edge.aicore.GenerativeModel as EdgeGenerativeModel
+
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.generationConfig as cloudGenerationConfig
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -53,7 +52,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var promptsFileUri: Uri? = null
     private var resultsFileUri: Uri? = null
-    private var edgeModel: EdgeGenerativeModel? = null
+
     private var mlkitModel: MlkitGenerativeModel? = null
     @Volatile
     private var isProcessing = false
@@ -106,7 +105,7 @@ class MainActivity : AppCompatActivity() {
 
         setupSpinner()
         setupClickListeners()
-        initEdgeGenerativeModel()
+
         initMlkitGenerativeModel()
         handleIntent(intent)
     }
@@ -149,7 +148,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        edgeModel?.close()
+        ModelFactory.close()
         mlkitModel?.close()
     }
 
@@ -162,9 +161,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun initEdgeGenerativeModel() {
-        edgeModel = ModelFactory.getEdgeGenerativeModel(applicationContext)
-    }
+
 
     private fun setupSpinner() {
         val models = listOf(LOCAL_EDGE_AI_SDK, LOCAL_ML_KIT_PROMPT_API, REMOTE_GEMINI)
@@ -278,6 +275,9 @@ class MainActivity : AppCompatActivity() {
             val commonPrefix = if (commonPrefixLength > 0) prompts[0].substring(0, commonPrefixLength) else ""
 
             contentResolver.openOutputStream(outputUri)?.use { fileOutputStream ->
+                if (modelName == LOCAL_EDGE_AI_SDK) {
+                    ModelFactory.init(applicationContext)
+                }
 
                 // Create Gemini API model if using remote
                 val geminiModel = if (modelName == REMOTE_GEMINI && apiKey != null) {
@@ -380,14 +380,14 @@ class MainActivity : AppCompatActivity() {
         var waitTime = INITIAL_WAIT_TIME
         while (true) {
             try {
-                var response: com.google.ai.edge.aicore.GenerateContentResponse?
+                var responseText = ""
                 val timeTaken = kotlin.system.measureTimeMillis {
-                    response = edgeModel?.generateContent(prompt)
+                    responseText = ModelFactory.generateContent(prompt)
                 }
                 waitTime = INITIAL_WAIT_TIME // Reset wait time on success
-                return Pair(response?.text ?: "Error: Empty response from model.", timeTaken)
-            } catch (e: GenerativeAIException) {
-                if (e.errorCode == GenerativeAIException.ErrorCode.BUSY) {
+                return Pair(if (responseText.isNotEmpty()) responseText else "Error: Empty response from model.", timeTaken)
+            } catch (e: Exception) {
+                if (e.message?.contains("BUSY") == true || e.message?.contains("17") == true) {
                     delay(waitTime)
                     waitTime *= 2
                 } else {

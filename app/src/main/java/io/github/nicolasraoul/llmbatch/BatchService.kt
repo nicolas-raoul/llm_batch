@@ -17,8 +17,7 @@ import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import com.google.ai.edge.aicore.GenerativeAIException
-import com.google.ai.edge.aicore.GenerativeModel as EdgeGenerativeModel
+
 import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.GenerativeModel as MlkitGenerativeModel
@@ -51,13 +50,13 @@ class BatchService : Service() {
     private var serviceJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Main + Job())
 
-    private var edgeModel: EdgeGenerativeModel? = null
+
     private var mlkitModel: MlkitGenerativeModel? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        initEdgeGenerativeModel()
+
         initMlkitGenerativeModel()
     }
 
@@ -167,7 +166,7 @@ class BatchService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceJob?.cancel()
-        edgeModel?.close()
+        ModelFactory.close()
         mlkitModel?.close()
     }
 
@@ -224,9 +223,7 @@ class BatchService : Service() {
         }
     }
 
-    private fun initEdgeGenerativeModel() {
-        edgeModel = ModelFactory.getEdgeGenerativeModel(applicationContext)
-    }
+
 
     private suspend fun processPrompts(promptsUri: Uri, resultsUri: Uri, modelName: String, apiKey: String?, isFolder: Boolean = false, folderFileIndex: Int = 0, folderTotalFiles: Int = 0) {
         try {
@@ -257,6 +254,10 @@ class BatchService : Service() {
             // Must open in append mode ("wa") to resume!
             withContext(Dispatchers.IO) {
                 contentResolver.openOutputStream(resultsUri, "wa")?.use { fileOutputStream ->
+
+                    if (modelName == LOCAL_EDGE_AI_SDK) {
+                        ModelFactory.init(applicationContext)
+                    }
 
                     val geminiModel = if (modelName == REMOTE_GEMINI && apiKey != null) {
                         GenerativeModel(
@@ -368,14 +369,15 @@ class BatchService : Service() {
         var waitTime = INITIAL_WAIT_TIME
         while (true) {
             try {
-                var response: com.google.ai.edge.aicore.GenerateContentResponse? = null
+                var responseText = ""
                 val timeTaken = kotlin.system.measureTimeMillis {
-                    response = edgeModel?.generateContent(prompt)
+                    responseText = ModelFactory.generateContent(prompt)
                 }
                 waitTime = INITIAL_WAIT_TIME
-                return Pair(response?.text ?: "Error: Empty response from model.", timeTaken)
-            } catch (e: GenerativeAIException) {
-                if (e.errorCode == GenerativeAIException.ErrorCode.BUSY) {
+                return Pair(if (responseText.isNotEmpty()) responseText else "Error: Empty response from model.", timeTaken)
+            } catch (e: Exception) {
+                // If it's a BUSY error, retry (though the LlmService api might throw different exceptions)
+                if (e.message?.contains("BUSY") == true || e.message?.contains("17") == true) { // 17 is BUSY AI_CORE_ERROR
                     delay(waitTime)
                     waitTime *= 2
                 } else {
