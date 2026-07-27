@@ -225,25 +225,17 @@ class BatchService : Service() {
     }
 
     private fun initEdgeGenerativeModel() {
-        try {
-            edgeModel = EdgeGenerativeModel(
-                com.google.ai.edge.aicore.generationConfig {
-                    context = applicationContext
-                    temperature = 0.2f
-                    topK = 16
-                    maxOutputTokens = 20
-                }
-            )
-        } catch (e: Exception) {
-            edgeModel = null
-            e.printStackTrace()
-        }
+        edgeModel = ModelFactory.getEdgeGenerativeModel(applicationContext)
     }
 
     private suspend fun processPrompts(promptsUri: Uri, resultsUri: Uri, modelName: String, apiKey: String?, isFolder: Boolean = false, folderFileIndex: Int = 0, folderTotalFiles: Int = 0) {
         try {
-            // Read all prompts
-            val prompts = readPromptsFromFile(promptsUri)
+            // Read all prompts and parse them immediately
+            val rawPrompts = readPromptsFromFile(promptsUri)
+            val prompts = rawPrompts.map { prompt ->
+                val parsed = parseCsvLine(prompt)
+                if (parsed.isNotEmpty()) parsed[0].replace("\\n", "\n").replace("\\r", "\r") else prompt.replace("\\n", "\n").replace("\\r", "\r")
+            }
             val totalPrompts = prompts.size
 
             // Count existing lines in results to skip already processed ones (so we can resume)
@@ -290,9 +282,8 @@ class BatchService : Service() {
                         }
                         broadcastProgress(index, totalPrompts, isDone = false, error = null, folderFileIndex = folderFileIndex, folderTotalFiles = folderTotalFiles)
 
-                        val parsed = parseCsvLine(prompt)
-                        val combinedPrompt = if (parsed.isNotEmpty()) parsed[0].replace("\\n", "\n").replace("\\r", "\r") else prompt.replace("\\n", "\n").replace("\\r", "\r")
-                        val dynamicSuffix = if (commonPrefixLength > 0) combinedPrompt.substring(commonPrefixLength) else combinedPrompt
+                        val combinedPrompt = prompt
+                        val dynamicSuffix = if (commonPrefixLength > 0 && combinedPrompt.length >= commonPrefixLength) combinedPrompt.substring(commonPrefixLength) else combinedPrompt
 
                         val (result, timeTaken) = when (modelName) {
                             LOCAL_EDGE_AI_SDK -> realEdgeLlmCall(combinedPrompt)
@@ -311,6 +302,7 @@ class BatchService : Service() {
                         ).joinToString(separator = ",") + "\n"
 
                         fileOutputStream.write(csvRecord.toByteArray())
+                        fileOutputStream.flush()
                     }
                 }
             }

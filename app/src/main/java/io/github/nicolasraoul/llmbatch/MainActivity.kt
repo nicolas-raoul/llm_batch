@@ -61,8 +61,11 @@ class MainActivity : AppCompatActivity() {
     // Activity result launcher for picking the prompts file
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
-            promptsFileUri = it
             val fileName = getFileName(it)
+            if (fileName.startsWith("results_")) {
+                Toast.makeText(this, "Warning: You selected a results file ($fileName). Select a prompts file instead.", Toast.LENGTH_LONG).show()
+            }
+            promptsFileUri = it
             binding.selectFileButton.text = fileName
         }
     }
@@ -105,6 +108,43 @@ class MainActivity : AppCompatActivity() {
         setupClickListeners()
         initEdgeGenerativeModel()
         initMlkitGenerativeModel()
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val promptsUriStr = intent?.getStringExtra("promptsUri")
+        val resultsUriStr = intent?.getStringExtra("resultsUri")
+        val modelName = intent?.getStringExtra("modelName") ?: LOCAL_EDGE_AI_SDK
+        val autoRun = intent?.getBooleanExtra("autoRun", false) ?: false
+
+        val adapter = binding.modelSpinner.adapter
+        if (adapter != null) {
+            for (i in 0 until adapter.count) {
+                if (adapter.getItem(i).toString() == modelName) {
+                    binding.modelSpinner.setSelection(i)
+                    break
+                }
+            }
+        }
+
+        if (promptsUriStr != null) {
+            val uri = Uri.parse(promptsUriStr)
+            promptsFileUri = uri
+            binding.selectFileButton.text = getFileName(uri)
+
+            if (autoRun) {
+                val outputUri = if (resultsUriStr != null) Uri.parse(resultsUriStr) else Uri.parse("file:///sdcard/llm_batch/100/results_" + getFileName(uri))
+                lifecycleScope.launch {
+                    processPrompts(modelName, outputUri = outputUri)
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -123,24 +163,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initEdgeGenerativeModel() {
-        try {
-            edgeModel = EdgeGenerativeModel(
-                com.google.ai.edge.aicore.generationConfig {
-                    context = applicationContext
-                    temperature = 0.2f
-                    topK = 16
-                    maxOutputTokens = 20
-                }
-            )
-        } catch (e: Exception) {
-            // Model initialization can fail if AI Core is not available.
-            edgeModel = null
-            e.printStackTrace()
-        }
+        edgeModel = ModelFactory.getEdgeGenerativeModel(applicationContext)
     }
 
     private fun setupSpinner() {
-        val models = listOf(LOCAL_ML_KIT_PROMPT_API, LOCAL_EDGE_AI_SDK, REMOTE_GEMINI)
+        val models = listOf(LOCAL_EDGE_AI_SDK, LOCAL_ML_KIT_PROMPT_API, REMOTE_GEMINI)
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, models)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.modelSpinner.adapter = adapter
@@ -234,10 +261,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun processPrompts(modelName: String, apiKey: String? = null, outputUri: Uri) {
+        resultsFileUri = outputUri
         setUiState(isLoading = true)
 
         try {
-            val prompts = readPromptsFromFile(promptsFileUri!!)
+            val rawPrompts = readPromptsFromFile(promptsFileUri!!)
+            val prompts = rawPrompts.map { prompt ->
+                val parsed = parseCsvLine(prompt)
+                val unescaped = if (parsed.isNotEmpty()) parsed[0] else prompt
+                unescaped.replace("\\n", "\n").replace("\\r", "\r")
+            }
             val totalPrompts = prompts.size
 
             // Prefix Caching: Find the common prefix
@@ -283,6 +316,7 @@ class MainActivity : AppCompatActivity() {
                     ).joinToString(separator = ",") + "\n"
                     Log.d("LLM_BATCH_CSV", csvRecord.trim())
                     fileOutputStream.write(csvRecord.toByteArray())
+                    fileOutputStream.flush()
                 }
             }
             setUiState(isLoading = false, resultsReady = true)
@@ -299,8 +333,34 @@ class MainActivity : AppCompatActivity() {
 
     private fun escapeCsvField(data: String): String {
         val withEscapedQuotes = data.replace("\"", "\"\"")
-        val withEscapedNewlines = withEscapedQuotes.replace("\n", "\\n")
+        val withEscapedNewlines = withEscapedQuotes.replace("\n", "\\n").replace("\r", "\\r")
         return "\"$withEscapedNewlines\""
+    }
+
+    private fun parseCsvLine(line: String): List<String> {
+        val result = mutableListOf<String>()
+        var current = java.lang.StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            if (c == '\"') {
+                if (inQuotes && i + 1 < line.length && line[i + 1] == '\"') {
+                    current.append('\"')
+                    i++
+                } else {
+                    inQuotes = !inQuotes
+                }
+            } else if (c == ',' && !inQuotes) {
+                result.add(current.toString())
+                current = java.lang.StringBuilder()
+            } else {
+                current.append(c)
+            }
+            i++
+        }
+        result.add(current.toString())
+        return result
     }
 
     private suspend fun readPromptsFromFile(uri: Uri): List<String> = withContext(Dispatchers.IO) {
@@ -403,16 +463,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openResultsFile() {
-        resultsFileUri?.let { uri ->
+        val uri = resultsFileUri ?: return
+        try {
+            val contentUri = if (uri.scheme == "file" && uri.path != null) {
+                val file = java.io.File(uri.path!!)
+                androidx.core.content.FileProvider.getUriForFile(
+                    this,
+                    "$packageName.provider",
+                    file
+                )
+            } else {
+                uri
+            }
+
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "text/plain")
+                setDataAndType(contentUri, "text/plain")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            try {
-                startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(this, "No app found to open text files.", Toast.LENGTH_SHORT).show()
-            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Error opening file: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
