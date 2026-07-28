@@ -90,19 +90,68 @@ object ModelFactory {
             
             val llmServiceField = GenerativeModel::class.java.getDeclaredField("llmService")
             llmServiceField.isAccessible = true
-            val llmService = llmServiceField.get(model)
+            var llmService = llmServiceField.get(model)
+            
+            if (llmService == null || noSafety) {
+                try {
+                    val createClientMethod = GenerativeModel::class.java.getDeclaredMethod("createAiCoreClient")
+                    createClientMethod.isAccessible = true
+                    val client = createClientMethod.invoke(model)
+                    
+                    val listFeaturesMethod = client::class.java.getDeclaredMethod("zza")
+                    listFeaturesMethod.isAccessible = true
+                    val futureFeatures = listFeaturesMethod.invoke(client) as ListenableFuture<*>
+                    val features = futureFeatures.await() as List<*>
+                    
+                    var targetFeature: Any? = null
+                    
+                    for (f in features) {
+                        if (f == null) continue
+                        val id = f::class.java.getDeclaredMethod("zze").invoke(f) as Int
+                        if (id == 19) { // LLM_IT_XS_GEM
+                            targetFeature = f
+                            break
+                        }
+                    }
+                    if (targetFeature == null) {
+                        for (f in features) {
+                            if (f == null) continue
+                            val id = f::class.java.getDeclaredMethod("zze").invoke(f) as Int
+                            if (id == 1) { // LLM_CPU_GEM
+                                targetFeature = f
+                                break
+                            }
+                        }
+                    }
+                    
+                    if (targetFeature != null) {
+                        val downloadMethod = GenerativeModel::class.java.getDeclaredMethod("createAiCoreDownloadCallback", Class.forName("com.google.ai.edge.aicore.DownloadCallback"))
+                        downloadMethod.isAccessible = true
+                        val mockCallback = downloadMethod.invoke(model, null)
+                        
+                        val zzlMethod = Class.forName("com.google.android.gms.internal.aicore.zzdh").getDeclaredMethod(
+                            "zzl", 
+                            Class.forName("com.google.android.gms.internal.aicore.zzar"), 
+                            Class.forName("com.google.android.gms.internal.aicore.zzaw"), 
+                            Class.forName("com.google.android.gms.internal.aicore.zzbb")
+                        )
+                        zzlMethod.isAccessible = true
+                        
+                        val newService = zzlMethod.invoke(null, client, targetFeature, mockCallback)
+                        llmServiceField.set(model, newService)
+                        llmService = newService
+                    }
+                } catch (e: Exception) {
+                    Log.e("LLM_BATCH", "Failed to init custom feature", e)
+                }
+            }
             
             if (llmService == null) {
-                // Not initialized!
-                val createLlmServiceMethod = GenerativeModel::class.java.getDeclaredMethod("createLlmService", kotlin.coroutines.Continuation::class.java)
-                createLlmServiceMethod.isAccessible = true
-                // It's a suspend method so we can't easily invoke it. Let's just generate a dummy content first.
                 try {
                     model.generateContent("hello")
                 } catch (e: Exception) {
                     Log.e("LLM_BATCH", "Dummy init failed", e)
                 }
-                // Now it's initialized!
             }
             val llmServiceAfter = llmServiceField.get(model) ?: throw Exception("llmService is null")
             
