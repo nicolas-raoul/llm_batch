@@ -7,6 +7,8 @@ import android.provider.OpenableColumns
 import android.text.Html
 import android.text.method.LinkMovementMethod
 import android.util.Log
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
@@ -39,6 +41,7 @@ import java.io.InputStreamReader
 
 private const val LOCAL_ML_KIT_PROMPT_API = "(local) ML Kit Prompt API"
 private const val LOCAL_EDGE_AI_SDK = "(local) Edge AI SDK"
+private const val LOCAL_EDGE_AI_SDK_NO_SAFETY = "(local) Edge AI SDK (no safety)"
 private const val REMOTE_GEMINI = "(remote) Gemini 2.5 Flash Lite API"
 
 private const val USE_PREFIX_CACHING = false
@@ -91,11 +94,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val folderPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        uri?.let {
+            contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val modelName = binding.modelSpinner.selectedItem.toString()
+            val serviceIntent = Intent(applicationContext, BatchService::class.java).apply {
+                action = "io.github.nicolasraoul.llmbatch.PROCESS_BATCH"
+                putExtra("folderUri", it.toString())
+                putExtra("modelName", modelName)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(serviceIntent)
+            } else {
+                applicationContext.startService(serviceIntent)
+            }
+            Toast.makeText(this, "Batch process started for folder", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        
+        val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.main) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -152,6 +176,21 @@ class MainActivity : AppCompatActivity() {
         mlkitModel?.close()
     }
 
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_process_folder -> {
+                folderPickerLauncher.launch(null)
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
     private fun initMlkitGenerativeModel() {
         try {
             mlkitModel = Generation.getClient()
@@ -164,7 +203,7 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun setupSpinner() {
-        val models = listOf(LOCAL_EDGE_AI_SDK, LOCAL_ML_KIT_PROMPT_API, REMOTE_GEMINI)
+        val models = listOf(LOCAL_EDGE_AI_SDK, LOCAL_EDGE_AI_SDK_NO_SAFETY, LOCAL_ML_KIT_PROMPT_API, REMOTE_GEMINI)
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, models)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.modelSpinner.adapter = adapter
@@ -275,7 +314,7 @@ class MainActivity : AppCompatActivity() {
             val commonPrefix = if (commonPrefixLength > 0) prompts[0].substring(0, commonPrefixLength) else ""
 
             contentResolver.openOutputStream(outputUri)?.use { fileOutputStream ->
-                if (modelName == LOCAL_EDGE_AI_SDK) {
+                if (modelName == LOCAL_EDGE_AI_SDK || modelName == LOCAL_EDGE_AI_SDK_NO_SAFETY) {
                     ModelFactory.init(applicationContext)
                 }
 
@@ -303,7 +342,8 @@ class MainActivity : AppCompatActivity() {
                     val dynamicSuffix = if (commonPrefixLength > 0) prompt.substring(commonPrefixLength) else prompt
 
                     val (result, timeTaken) = when (modelName) {
-                        LOCAL_EDGE_AI_SDK -> realEdgeLlmCall(prompt)
+                        LOCAL_EDGE_AI_SDK -> realEdgeLlmCall(prompt, noSafety = false)
+                        LOCAL_EDGE_AI_SDK_NO_SAFETY -> realEdgeLlmCall(prompt, noSafety = true)
                         REMOTE_GEMINI -> realGeminiApiCall(geminiModel!!, prompt)
                         LOCAL_ML_KIT_PROMPT_API -> realMlkitLlmCall(commonPrefix, dynamicSuffix)
                         else -> Pair("Error: Unknown model", 0L)
@@ -376,13 +416,13 @@ class MainActivity : AppCompatActivity() {
         prompts
     }
 
-    private suspend fun realEdgeLlmCall(prompt: String): Pair<String, Long> {
+    private suspend fun realEdgeLlmCall(prompt: String, noSafety: Boolean = false): Pair<String, Long> {
         var waitTime = INITIAL_WAIT_TIME
         while (true) {
             try {
                 var responseText = ""
                 val timeTaken = kotlin.system.measureTimeMillis {
-                    responseText = ModelFactory.generateContent(prompt)
+                    responseText = ModelFactory.generateContent(prompt, noSafety)
                 }
                 waitTime = INITIAL_WAIT_TIME // Reset wait time on success
                 return Pair(if (responseText.isNotEmpty()) responseText else "Error: Empty response from model.", timeTaken)

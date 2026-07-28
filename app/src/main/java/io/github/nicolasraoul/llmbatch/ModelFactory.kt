@@ -47,11 +47,11 @@ object ModelFactory {
             val method = GenerativeModel::class.java.getMethod("prepareInferenceEngine", kotlin.coroutines.Continuation::class.java)
             // It's a suspend function... wait, we don't strictly need to await prepare, generateContent handles it.
         } catch (e: Exception) {
-            e.printStackTrace()
+            throw e
         }
     }
     
-    suspend fun generateContent(prompt: String): String {
+    suspend fun generateContent(prompt: String, noSafety: Boolean = false): String {
         val model = generativeModel ?: throw Exception("GenerativeModel not initialized")
         try {
             val contentBuilderClass = Class.forName("com.google.ai.edge.aicore.Content\$Builder")
@@ -81,7 +81,7 @@ object ModelFactory {
             builderClass.getMethod("zzh", Class.forName("com.google.android.gms.internal.aicore.zzdi")).invoke(builder, requestClass.getMethod("zzh").invoke(request))
             
             // BYPASS SAFETY FILTER
-            builderClass.getMethod("zzi", Boolean::class.javaPrimitiveType).invoke(builder, false)
+            builderClass.getMethod("zzi", Boolean::class.javaPrimitiveType).invoke(builder, !noSafety)
             
             builderClass.getMethod("zzj", Int::class.javaPrimitiveType).invoke(builder, requestClass.getMethod("zzj").invoke(request))
             builderClass.getMethod("zzk", Int::class.javaPrimitiveType).invoke(builder, requestClass.getMethod("zzk").invoke(request))
@@ -97,7 +97,11 @@ object ModelFactory {
                 val createLlmServiceMethod = GenerativeModel::class.java.getDeclaredMethod("createLlmService", kotlin.coroutines.Continuation::class.java)
                 createLlmServiceMethod.isAccessible = true
                 // It's a suspend method so we can't easily invoke it. Let's just generate a dummy content first.
-                model.generateContent(prompt)
+                try {
+                    model.generateContent("hello")
+                } catch (e: Exception) {
+                    Log.e("LLM_BATCH", "Dummy init failed", e)
+                }
                 // Now it's initialized!
             }
             val llmServiceAfter = llmServiceField.get(model) ?: throw Exception("llmService is null")
@@ -123,8 +127,7 @@ object ModelFactory {
             val textMethod = firstPart!!::class.java.getDeclaredMethod("getText")
             return textMethod.invoke(firstPart) as String
         } catch (e: Exception) {
-            e.printStackTrace()
-            return ""
+            throw e
         }
     }
     

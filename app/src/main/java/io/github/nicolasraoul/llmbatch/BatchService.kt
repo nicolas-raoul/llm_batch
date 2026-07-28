@@ -41,6 +41,7 @@ class BatchService : Service() {
 
         const val LOCAL_ML_KIT_PROMPT_API = "(local) ML Kit Prompt API"
         const val LOCAL_EDGE_AI_SDK = "(local) Edge AI SDK"
+        const val LOCAL_EDGE_AI_SDK_NO_SAFETY = "(local) Edge AI SDK (no safety)"
         const val REMOTE_GEMINI = "(remote) Gemini 2.5 Flash Lite API"
 
         private const val USE_PREFIX_CACHING = false
@@ -255,8 +256,9 @@ class BatchService : Service() {
             withContext(Dispatchers.IO) {
                 contentResolver.openOutputStream(resultsUri, "wa")?.use { fileOutputStream ->
 
-                    if (modelName == LOCAL_EDGE_AI_SDK) {
+                    if (modelName == LOCAL_EDGE_AI_SDK || modelName == LOCAL_EDGE_AI_SDK_NO_SAFETY) {
                         ModelFactory.init(applicationContext)
+                        try { listFeaturesAndLog(applicationContext) } catch (e: Exception) {}
                     }
 
                     val geminiModel = if (modelName == REMOTE_GEMINI && apiKey != null) {
@@ -287,7 +289,8 @@ class BatchService : Service() {
                         val dynamicSuffix = if (commonPrefixLength > 0 && combinedPrompt.length >= commonPrefixLength) combinedPrompt.substring(commonPrefixLength) else combinedPrompt
 
                         val (result, timeTaken) = when (modelName) {
-                            LOCAL_EDGE_AI_SDK -> realEdgeLlmCall(combinedPrompt)
+                            LOCAL_EDGE_AI_SDK -> realEdgeLlmCall(combinedPrompt, noSafety = false)
+                            LOCAL_EDGE_AI_SDK_NO_SAFETY -> realEdgeLlmCall(combinedPrompt, noSafety = true)
                             REMOTE_GEMINI -> realGeminiApiCall(geminiModel!!, combinedPrompt)
                             LOCAL_ML_KIT_PROMPT_API -> realMlkitLlmCall(commonPrefix, dynamicSuffix)
                             else -> Pair("Error: Unknown model", 0L)
@@ -365,13 +368,13 @@ class BatchService : Service() {
         prompts
     }
 
-    private suspend fun realEdgeLlmCall(prompt: String): Pair<String, Long> {
+    private suspend fun realEdgeLlmCall(prompt: String, noSafety: Boolean = false): Pair<String, Long> {
         var waitTime = INITIAL_WAIT_TIME
         while (true) {
             try {
                 var responseText = ""
                 val timeTaken = kotlin.system.measureTimeMillis {
-                    responseText = ModelFactory.generateContent(prompt)
+                    responseText = ModelFactory.generateContent(prompt, noSafety)
                 }
                 waitTime = INITIAL_WAIT_TIME
                 return Pair(if (responseText.isNotEmpty()) responseText else "Error: Empty response from model.", timeTaken)
@@ -381,7 +384,7 @@ class BatchService : Service() {
                     delay(waitTime)
                     waitTime *= 2
                 } else {
-                    return Pair("Error: ${e.message}", 0L)
+                    return Pair("Error: ${e.javaClass.name} - ${e.message}", 0L)
                 }
             }
         }
@@ -424,7 +427,7 @@ class BatchService : Service() {
                     return Pair("Error: ML Kit API - ${e.message}", 0L)
                 }
             } catch (e: Exception) {
-                return Pair("Error: ML Kit API - ${e.message}", 0L)
+                return Pair("Error: ${e.javaClass.name} - ${e.message}", 0L)
             }
         }
     }
