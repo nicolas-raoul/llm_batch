@@ -232,7 +232,15 @@ class BatchService : Service() {
             val rawPrompts = readPromptsFromFile(promptsUri)
             val prompts = rawPrompts.map { prompt ->
                 val parsed = parseCsvLine(prompt)
-                if (parsed.isNotEmpty()) parsed[0].replace("\\n", "\n").replace("\\r", "\r") else prompt.replace("\\n", "\n").replace("\\r", "\r")
+                if (parsed.size > 1) {
+                    val reviewPart = parsed[0].replace("\\n", "\n").replace("\\r", "\r")
+                    val promptPart = parsed[1].replace("\\n", "\n").replace("\\r", "\r")
+                    promptPart + "\n\nReview:\n<review>\n" + reviewPart + "\n</review>"
+                } else if (parsed.isNotEmpty()) {
+                    parsed[0].replace("\\n", "\n").replace("\\r", "\r")
+                } else {
+                    prompt.replace("\\n", "\n").replace("\\r", "\r")
+                }
             }
             val totalPrompts = prompts.size
 
@@ -258,7 +266,7 @@ class BatchService : Service() {
 
                     if (modelName == LOCAL_EDGE_AI_SDK || modelName == LOCAL_EDGE_AI_SDK_NO_SAFETY) {
                         ModelFactory.init(applicationContext)
-                        try { listFeaturesAndLog(applicationContext) } catch (e: Exception) {}
+
                     }
 
                     val geminiModel = if (modelName == REMOTE_GEMINI && apiKey != null) {

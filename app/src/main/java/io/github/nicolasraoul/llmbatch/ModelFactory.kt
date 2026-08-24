@@ -15,6 +15,8 @@ import java.lang.reflect.Method
 
 object ModelFactory {
     private var generativeModel: GenerativeModel? = null
+    var targetFeatureId = 108
+
 
     private suspend fun <T> ListenableFuture<T>.await(): T = suspendCancellableCoroutine { cont ->
         Futures.addCallback(this, object : FutureCallback<T> {
@@ -53,6 +55,12 @@ object ModelFactory {
     
     suspend fun generateContent(prompt: String, noSafety: Boolean = false): String {
         val model = generativeModel ?: throw Exception("GenerativeModel not initialized")
+        
+        if (!noSafety) {
+            val response = model.generateContent(prompt)
+            return response.text ?: ""
+        }
+        
         try {
             val contentBuilderClass = Class.forName("com.google.ai.edge.aicore.Content\$Builder")
             val contentBuilder = contentBuilderClass.getConstructor().newInstance()
@@ -108,7 +116,7 @@ object ModelFactory {
                     for (f in features) {
                         if (f == null) continue
                         val id = f::class.java.getDeclaredMethod("zze").invoke(f) as Int
-                        if (id == 19) { // LLM_IT_XS_GEM
+                        if (id == targetFeatureId) { 
                             targetFeature = f
                             break
                         }
@@ -127,8 +135,16 @@ object ModelFactory {
                     if (targetFeature != null) {
                         val downloadMethod = GenerativeModel::class.java.getDeclaredMethod("createAiCoreDownloadCallback", Class.forName("com.google.ai.edge.aicore.DownloadCallback"))
                         downloadMethod.isAccessible = true
-                        val mockCallback = downloadMethod.invoke(model, null)
+                        val downloadCallbackClass = Class.forName("com.google.ai.edge.aicore.DownloadCallback")
+                        val myCallback = java.lang.reflect.Proxy.newProxyInstance(
+                            downloadCallbackClass.classLoader,
+                            arrayOf(downloadCallbackClass)
+                        ) { _, method, args -> 
+                            Log.e("LLM_BATCH", "DownloadCallback method called: ${method.name}")
+                            null 
+                        }
                         
+                        val mockCallback = downloadMethod.invoke(model, myCallback)                        
                         val zzlMethod = Class.forName("com.google.android.gms.internal.aicore.zzdh").getDeclaredMethod(
                             "zzl", 
                             Class.forName("com.google.android.gms.internal.aicore.zzar"), 
@@ -182,6 +198,10 @@ object ModelFactory {
     
     fun close() {
         generativeModel?.close()
+        generativeModel = null
+    }
+
+    fun reset() {
         generativeModel = null
     }
 }

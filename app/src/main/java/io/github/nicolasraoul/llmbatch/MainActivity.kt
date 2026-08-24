@@ -120,6 +120,9 @@ class MainActivity : AppCompatActivity() {
         
         val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
+        lifecycleScope.launch { 
+            ListFeatures.dumpFeatures(this@MainActivity)
+        }
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.main) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -418,20 +421,26 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun realEdgeLlmCall(prompt: String, noSafety: Boolean = false): Pair<String, Long> {
         var waitTime = INITIAL_WAIT_TIME
+        val startTime = System.currentTimeMillis()
         while (true) {
             try {
                 var responseText = ""
                 val timeTaken = kotlin.system.measureTimeMillis {
                     responseText = ModelFactory.generateContent(prompt, noSafety)
                 }
+                if (responseText.isEmpty()) {
+                    throw Exception("Empty response from model.")
+                }
                 waitTime = INITIAL_WAIT_TIME // Reset wait time on success
-                return Pair(if (responseText.isNotEmpty()) responseText else "Error: Empty response from model.", timeTaken)
+                return Pair(responseText, timeTaken)
             } catch (e: Exception) {
-                if (e.message?.contains("BUSY") == true || e.message?.contains("17") == true) {
+                val elapsedTime = System.currentTimeMillis() - startTime
+                if (elapsedTime + waitTime <= 100000L) {
                     delay(waitTime)
                     waitTime *= 2
                 } else {
                     e.printStackTrace()
+                    Log.e("LLM_BATCH", "realEdgeLlmCall failed completely after ${elapsedTime}ms: ${e.message}")
                     return Pair("Error: ${e.message}", 0L)
                 }
             }
