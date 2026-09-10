@@ -77,7 +77,31 @@ The results file contains three columns:
 - **Response** - The model's generated response
 - **Time** - Processing time in milliseconds
 
-## Technical Details
+## Automation / ADB
+100: 
+101: LLM Batch can be controlled via ADB Intents, allowing for fully automated batch processing pipelines.
+102: 
+103: ### Running via Intent
+104: 
+105: You can start batch processing using `adb shell am start` with the following parameters:
+106: 
+107: - `-n io.github.nicolasraoul.llmbatch/.MainActivity`: Target the main activity.
+108: - `-S`: (Optional) Force stop the target app before starting the activity.
+109: - `--es promptsUri <URI>`: Path to the input file (e.g., `file:///sdcard/prompts.txt`).
+110: - `--es resultsUri <URI>`: Path where results should be saved.
+111: - `--es modelName <NAME>`: (Optional) Model name. Defaults to `(local) Edge AI SDK`.
+112: - `--ez autoRun <BOOLEAN>`: Set to `true` to start processing immediately without manual clicking.
+113: 
+114: ### Example
+115: 
+116: ```bash
+117: adb shell am start -n io.github.nicolasraoul.llmbatch/.MainActivity -S \
+118:   --es promptsUri "file:///sdcard/llm_batch/prompts.txt" \
+119:   --es resultsUri "file:///sdcard/llm_batch/results.txt" \
+120:   --ez autoRun true
+121: ```
+122: 
+123: ## Technical Details
 
 - Built with Kotlin and Android Jetpack
 - Uses ViewBinding for UI management
